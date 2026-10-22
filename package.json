@@ -1,0 +1,74 @@
+{
+  "name": "dsh-auto-review-custom",
+  "version": "0.1.0",
+  "description": "Auto review 增强：新会话默认进入 auto 权限预设 + 两档审查提示词（全局/工作区）+ 文件类工具静态放行",
+  "type": "module",
+  "main": "lib/index.js",
+  "bin": {
+    "dsh-auto-review-custom": "bin/manage.mjs"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client.js",
+    "./manage": "./lib/manage.js"
+  },
+  "files": [
+    "lib/**/*.js",
+    "client.js",
+    "bin/**/*.mjs",
+    "locale/*.json",
+    "README.md",
+    "VERSIONS.md",
+    "PUBLISHING.md",
+    "cordis.patch.yml"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "auto-review",
+    "permission"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TanxiaoOrz/dsh-autoReview-default-config.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TanxiaoOrz/dsh-autoReview-default-config/issues"
+  },
+  "homepage": "https://github.com/TanxiaoOrz/dsh-autoReview-default-config#readme",
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-permission-presets": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-workspace": "0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "*",
+    "zod": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-llm": { "optional": true },
+    "@deepseek-ai/dsh-permission-presets": { "optional": true },
+    "@deepseek-ai/dsh-session": { "optional": true },
+    "@deepseek-ai/dsh-tools": { "optional": true },
+    "@deepseek-ai/dsh-workspace": { "optional": true },
+    "@deepseek-ai/schemastery": { "optional": true },
+    "zod": { "optional": true }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}

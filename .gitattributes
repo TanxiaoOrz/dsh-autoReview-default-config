@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# 文本换行与二进制标记
+#
+# 仓库统一用 LF 存文本：跨平台 checkout 时不会因为 CRLF 让整个文件显示成
+# 「全部改写」，git diff / PR review 才有意义。
+# ═══════════════════════════════════════════════════════════════════════════
+
+# 默认：按内容自动判定文本，文本一律以 LF 入库
+* text=auto eol=lf
+
+# 明确是文本的类型（避免被误判成二进制）
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.gitignore    text eol=lf
+*.gitattributes text eol=lf
+
+# Windows 专用脚本必须保持 CRLF —— 本机只有 PowerShell 5.1，
+# 且这些脚本要求「UTF-8 BOM + CRLF」，换行被归一化会破坏 BOM 之外的解析。
+# 当前仓库尚无 .ps1/.cmd，保留规则以防将来加入 tools/*.ps1。
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# 二进制：不做换行转换，也不参与文本 diff
+*.tgz   binary
+*.zip   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
