@@ -2,7 +2,8 @@
 
 DSH（DeepSeek Harness）的 **Auto review 增强插件**。
 
-> 适配宿主：`0.2.0-rc.2`。宿主升级后**必须先跑** `node bin/manage.mjs check-compat`，
+> 适配宿主：**`>=0.2.0 <0.3.0`**（已逐点核对 `0.2.0-rc.2` 与 `0.2.1-rc.2`）。
+> 落在区间外的版本，升级后**必须先跑** `node bin/manage.mjs check-compat`，
 > 再按 [VERSIONS.md §6](./VERSIONS.md#6-设置页与提示词文件通道的升级检查清单f5f11)
 > 冒烟一遍设置页。兼容性维护流程见 [VERSIONS.md](./VERSIONS.md)。
 
@@ -485,14 +486,24 @@ if (!review.ok) return failed(exec, review.error)   // → { kind: 'deny' }
 > 另注：审查用的模型**跟随会话当前模型**（`session.requestHeader()`），
 > 不是固定模型。所以换模型会连带改变审查的质量、成本和稳定性。
 
-### 宿主版本不匹配会在装载时告警
+### 宿主版本兼容性
+
+| 项 | 值 |
+|---|---|
+| 兼容区间 | **`>=0.2.0 <0.3.0`**（同一 minor 内的补丁/预发布版本都接受） |
+| 逐点核对过 | `0.2.0-rc.2`（本机实测）、`0.2.1-rc.2`（下载厂商包逐条核对 F1–F11） |
+| 判定方式 | 只比 `major.minor`，不看 `-rc.N` 标签——标签变化不影响内部事实表 |
 
 插件启动时会读取**当前进程实际运行的那套 DSH** 的版本（从 `process.argv[1]` 上溯到
-安装目录，读 `@deepseek-ai/dsh/package.json`），与本插件适配的 `0.2.0-rc.2` 比对。
+安装目录，读 `@deepseek-ai/dsh/package.json`），与上面的区间比对。
 
-不一致就 `warn` 一条明确的提示，并在 `probe.log` 写
+**落在区间外**才 `warn` 一条明确的提示，并在 `probe.log` 写
 `host-versions: MISMATCH actual=… expected=…`。这样别人装到别的版本上时能**当场看到**，
 而不是遇到「装了个没用的东西」还找不到原因。
+
+> **为什么不写死成单个精确版本**：0.1.x 曾只认 `0.2.0-rc.2`，宿主发 `0.2.1-rc.2` 后
+> 即使 F1–F11 逐条都没变也会误报 MISMATCH，用户看到「版本不匹配」就以为插件坏了。
+> 现在改成区间 + 一份 `VERIFIED_HOST_VERSIONS` 逐点核对清单（见 `lib/compat.js`）。
 
 > **不会误报**：判定只认 `@deepseek-ai/dsh` 这一个包，且**拿不到版本就静默跳过**
 > （返回 `unknown` 不告警）。故意不从 `import('@deepseek-ai/...')` 读版本——那会读到

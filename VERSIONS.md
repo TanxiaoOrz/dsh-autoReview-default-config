@@ -3,6 +3,11 @@
 > 本文件是**插件与宿主兼容性**的唯一权威记录。
 > 宿主（DSH / `@deepseek-ai/*`）任何一次升级，都必须按本文流程复验；
 > 不兼容则发新版插件，并在下表追加一行。
+>
+> **当前兼容区间：`>=0.2.0 <0.3.0`**（已逐点核对 `0.2.0-rc.2`、`0.2.1-rc.2`）。
+> ⚠️ 下表「出处」列的行号是 **0.2.0-rc.2** 时的快照。0.2.1-rc.2 已把
+> `dsh-api-gateway` 的 `lib/client.js` 拆成 `client.browser.js` / `client.node.js`，
+> **行号会漂移**——检索时请按「文件名 + 符号名」（如 `validateBinding`），别按旧行号。
 
 ---
 
@@ -46,23 +51,58 @@
 |---|---|---|---|
 | 0.1.0 | `0.2.0-rc.2` | ✅ 已验证 | 基于 pnpm store `@deepseek-ai+dsh@0.2.0-rc.2_6751…` 逐行阅读核实 |
 | 0.1.1 | `0.2.0-rc.2` | ✅ 已验证 | 修 0.1.0 的设置页「保存失败」：`defaultPreset` 开关把布尔透传给 `'auto' \| 'off'` 联合类型字段（见 §7） |
+| 0.1.1 | `0.2.1-rc.2` | ✅ 已验证 | 下载 0.2.1-rc.2 的六个厂商包（auto-review / permission-presets / api-gateway / settings / client-ui-settings / config-editor）逐条核对 F1–F11 全部成立；同时把版本判定从「精确一条」改成「区间」 |
 
-**验证过的包版本**（`lib/compat.js` 的 `VERIFIED_PACKAGES`）：
+**兼容区间**：`>=0.2.0 <0.3.0`（同一 minor 内的补丁与预发布版本都接受）。
+判定只比 `major.minor`，不看 `-rc.N` 标签；`lib/compat.js` 的
+`VERIFIED_HOST_VERSIONS` 记录**逐点核对过**的版本，未列的区间内版本按不告警处理。
+
+### 2.1 0.2.1-rc.2 的核对结论（为什么敢声明兼容）
+
+| 事实 | 0.2.1-rc.2 现状 | 判定 |
+|---|---|---|
+| **F1** `REVIEW_POLICY` 开头 | 第 20 行起仍为 `REVIEW_POLICY⏎You are the final authorization reviewer…` | ✅ 未变 |
+| **F2** 四段拼接 | `reviewUserText()` 仍依次拼 `ENVIRONMENT / PROJECT_INSTRUCTIONS / FILTERED_HISTORY / PENDING_ACTION` | ✅ 未变 |
+| **F3** 判决协议 | `readDecision()` 仍是「零或多个 reasoning + 一个 text + 终止 finish(stop)」；`parseDecision()` allow 形态仍是 `{risk, decision}` 两成员 | ✅ 未变 |
+| **F4** `auto` 保留名 | `AUTO_PRESET = "auto"`；`names` 仍含 auto；`defaultOptions` 仍不含 | ✅ 未变 |
+| **F5** `$mount` 串行队列 | `async $mount(contribution)` 仍走 `this.enqueue(...)` | ✅ 未变 |
+| **F6** 信封形状 | 失败仍是 `{ok:false, error:rebuiltFailure(...)}`，成功仍是 `{ok:true, value:…}` | ✅ 未变 |
+| **F7** typert 绑定校验 | `validateBinding()` 仍 `Reflect.get(original,"typertRemote")` 并比对 service/serviceKey/namespace | ✅ 未变 |
+| **F8** 参数 codec strict | `requireStrictInputs()` 仍要求 `codec.mode === "strict"` | ✅ 未变 |
+| **F9** volatile 投影 | `volatileForm()` / `isVolatilePath()` 仍在，零 volatile 字段仍抛 `has no volatile fields` | ✅ 未变 |
+| **F10** ConfigForm API | `status/writable` 与 `set/unset/mutate` 签名不变 | ✅ 未变 |
+| **F11** config-editor 行定位 | 仍按 `id`，且 `name` 不匹配时不认该行（`(!item.has("name") || … === entry.options.name)`） | ✅ 未变 |
+
+> ⚠️ **唯一的结构性变化**：`dsh-api-gateway` 把 `lib/client.js` 拆成了
+> `lib/client.browser.js` + `lib/client.node.js`。逻辑未变，但**文档里的行号引用会失效**——
+> 引用位置时请按文件名+符号名检索，别按旧行号。本插件代码本身不受影响
+> （我们只用运行时 API，不 import 这些文件）。
+
+### 2.2 已经落在区间外时会怎样
+
+`0.1.5-rc.3`、`0.3.x` 等**不在** `>=0.2.0 <0.3.0` 内的版本会在装载时告警
+（`probe.log` 记 `host-versions: MISMATCH`）。此时先跑 `check-compat` 与 §6 冒烟；
+不兼容就按 §3.3 改适配点并发布新插件版本。
+
+**验证过的包版本**（`lib/compat.js` 的 `VERIFIED_PACKAGES`，**只用于诊断输出，不参与判定**）：
 
 ```
-# 功能①②③ 的判定基础
-@deepseek-ai/dsh-experimental-auto-review  0.2.0-rc.2
-@deepseek-ai/dsh-permission-presets        0.2.0-rc.2
+# 功能①②③ 的判定基础（0.2.0-rc.2 与 0.2.1-rc.2 均已核对）
+@deepseek-ai/dsh-experimental-auto-review  0.2.0-rc.2 / 0.2.1-rc.2
+@deepseek-ai/dsh-permission-presets        0.2.0-rc.2 / 0.2.1-rc.2
 @deepseek-ai/dsh-llm                       0.2.0-rc.2
 @deepseek-ai/dsh-session                   0.2.0-rc.2
 @deepseek-ai/dsh-workspace                 0.2.0-rc.2
 
 # 设置页与提示词文件通道（F5–F11）
-@deepseek-ai/dsh-api-gateway               0.2.0-rc.2
+@deepseek-ai/dsh-api-gateway               0.2.0-rc.2 / 0.2.1-rc.2
+@deepseek-ai/dsh-settings                  0.2.0-rc.2 / 0.2.1-rc.2
+@deepseek-ai/dsh-client-ui-settings        0.2.0-rc.2 / 0.2.1-rc.2
 @deepseek-ai/dsh-typert-protocol           0.2.0-rc.2
 @deepseek-ai/dsh-typert-registry           0.2.0-rc.2
-@deepseek-ai/dsh-client-ui-settings        0.2.0-rc.2
 ```
+
+> 判定不看这张表（否则每次宿主发补丁都要改代码）。它只写进 `probe.log` 便于排查。
 
 ---
 
