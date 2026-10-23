@@ -45,6 +45,7 @@
 | 插件版本 | 宿主版本 | 状态 | 备注 |
 |---|---|---|---|
 | 0.1.0 | `0.2.0-rc.2` | ✅ 已验证 | 基于 pnpm store `@deepseek-ai+dsh@0.2.0-rc.2_6751…` 逐行阅读核实 |
+| 0.1.1 | `0.2.0-rc.2` | ✅ 已验证 | 修 0.1.0 的设置页「保存失败」：`defaultPreset` 开关把布尔透传给 `'auto' \| 'off'` 联合类型字段（见 §7） |
 
 **验证过的包版本**（`lib/compat.js` 的 `VERIFIED_PACKAGES`）：
 
@@ -250,7 +251,66 @@ Get-Content "$env:DSH_HOME\auto-review\prompts\global.md" -Raw
 # 会话事件日志（zstd 是分帧写的，普通解压只读到第一帧）
 node scripts/read-session-log.mjs "$env:DSH_HOME\sessions\<工作区转义名>\session-xxx\session.v4.jsonl.zstd"
 
-# 设置页结构性检查（不启动浏览器，29 项）
+# 设置页结构性检查（不启动浏览器，35 项，含开关取值映射回归）
 node scripts/client-structure-test.mjs
 ```
+
+---
+
+## 7. 已修的设置页 bug：开关布尔值 vs 联合类型字段（0.1.1）
+
+### 7.1 症状
+
+「设置 → Auto Review」里切换**「新会话默认启用 Auto review」**开关，红色横幅报
+**「保存失败」**，值不落盘。页面渲染正常，控件与当前值都能显示。
+
+### 7.2 根因
+
+设置页的开关组件（`Switch` → `ToggleRow`）**只产出布尔值**，但 `lib/schema.js` 里
+`defaultPreset` 是字符串联合类型：
+
+```js
+defaultPreset: z.union(['auto', 'off']).default('off')…
+```
+
+0.1.0 的 `toggle()` 把开关给的 `true/false` **原样**交给 `setField`，宿主 schema
+校验直接拒绝（探针抓到的真实报错）：
+
+```
+ValidationError: invalid config:
+  - $.defaultPreset expected "auto" | "off" but got true
+```
+
+旁证：同为开关的 `allowRules` / `prompts` 是 `z.boolean()`，从未报错——只有联合类型
+的那一个坏。也就是说 **UI 控件的取值类型必须与 schema 字段类型对齐**，这是本插件
+自己的一层映射责任，宿主不会替我们转。
+
+### 7.3 修法（0.1.1）
+
+`client.js` 里引入**一张显式映射表**，`toggle` 一律经它转换后再提交：
+
+```js
+const BOOLEAN_FIELD_VALUES = Object.freeze({
+  defaultPreset: { on: 'auto', off: 'off' },
+})
+const fieldValue = (field, next) => {
+  const mapping = BOOLEAN_FIELD_VALUES[field]
+  return mapping === undefined ? next : next ? mapping.on : mapping.off
+}
+// …
+accepted = (await setField(field, fieldValue(field, next))) === true
+```
+
+**为什么用表而不是在调用点写 `next ? 'auto' : 'off'`**：表把「字段类型」这个
+知识集中到一处，新增联合类型字段时只要不改表就会被回归测试抓到。对应测试在
+`scripts/client-structure-test.mjs` 的「开关取值映射」一节：它会扫 `lib/schema.js`
+里所有含 `.union(` 的字段，逐个断言已登记，**漏登记即测试失败**。
+
+### 7.4 复验方法
+
+1. `node scripts/client-structure-test.mjs` → 35 项全绿
+2. 重启 DSH，进设置页点该开关 → 显示「已保存」，且
+   `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 的 `auto-review-custom` 条目
+   出现 `defaultPreset: auto` / `off`
+
 

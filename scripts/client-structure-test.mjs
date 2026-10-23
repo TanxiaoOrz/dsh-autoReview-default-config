@@ -68,6 +68,25 @@ check('用 seq 强制重新计时', src.includes('seqRef.current += 1') && src.i
 check('不再按内容相等禁用保存', !src.includes('globalDraft === storedGlobal,') && !src.includes('draft === entry.prompt,'))
 check('显示 3.5 秒', src.includes('3500'))
 
+heading('开关取值映射（0.1.0 的「保存失败」回归）')
+// 背景：开关只产出布尔值，而 defaultPreset 在 Config schema 里是
+// z.union(['auto','off'])。0.1.0 把 true 原样提交，被宿主拒绝：
+//   ValidationError: $.defaultPreset expected "auto" | "off" but got true
+check('存在开关取值映射表', src.includes('BOOLEAN_FIELD_VALUES'))
+check('defaultPreset 映射到 auto/off', /defaultPreset:\s*\{\s*on:\s*'auto',\s*off:\s*'off'\s*\}/.test(src))
+check('toggle 经 fieldValue 转换后再提交', src.includes('setField(field, fieldValue(field, next))'))
+check('toggle 不再原样透传布尔值', !src.includes('setField(field, next)'))
+// schema 里的联合字段必须都登记进映射表，否则同一个 bug 会在新字段上复发。
+// 判定方式：按顶层字段切块，块内含 `.union(` 的即为非布尔（联合）字段。
+const schemaSrc = readFileSync(new URL('../lib/schema.js', import.meta.url), 'utf8')
+const unionFields = [...schemaSrc.matchAll(/^ {2}(\w+): z([\s\S]*?)(?=^ {2}\w+: z|^\})/gm)]
+  .filter((match) => match[2].includes('.union('))
+  .map((match) => match[1])
+check('识别到 schema 中的联合字段', unionFields.length > 0, `找到 ${unionFields.length} 个`)
+for (const field of unionFields) {
+  check(`联合字段 ${field} 已登记取值映射`, src.includes(`${field}: {`))
+}
+
 heading('样式约束')
 check('无硬编码颜色', !/#[0-9a-f]{3,8}\b/i.test(src))
 check('只用主题 token', src.includes('--dsw-alias-'))

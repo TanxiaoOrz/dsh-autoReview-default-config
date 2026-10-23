@@ -1,6 +1,6 @@
 {
   "name": "dsh-auto-review-custom",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Auto review 增强：新会话默认进入 auto 权限预设 + 两档审查提示词（全局/工作区）+ 文件类工具静态放行",
   "type": "module",
   "main": "lib/index.js",

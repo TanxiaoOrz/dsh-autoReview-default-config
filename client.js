@@ -531,12 +531,37 @@ window.__ModuleLoader__.load({
         return accepted
       }
 
+      /**
+       * 开关 → 配置字段的取值映射。
+       *
+       * ⚠️ 开关组件（`Switch`/`ToggleRow`）只产出**布尔值**，但 Config schema 里
+       * 的字段类型并不全是布尔：`defaultPreset` 是 `'auto' | 'off'` 字符串联合
+       * （见 `lib/schema.js`）。把 `true/false` 原样透传会直接被宿主 schema 拒绝：
+       *
+       * ```
+       * ValidationError: invalid config:
+       *   - $.defaultPreset expected "auto" | "off" but got true
+       * ```
+       *
+       * 表现就是「点开关 = 保存失败」，而且不崩溃、只在下次读取时看出没落盘。
+       * 所以**每个非布尔字段都必须在这里登记**，不允许靠调用点各自转换。
+       */
+      const BOOLEAN_FIELD_VALUES = Object.freeze({
+        defaultPreset: { on: 'auto', off: 'off' },
+      })
+
+      /** 把开关的布尔值转成该字段 schema 要求的取值；布尔字段原样返回。 */
+      const fieldValue = (field, next) => {
+        const mapping = BOOLEAN_FIELD_VALUES[field]
+        return mapping === undefined ? next : next ? mapping.on : mapping.off
+      }
+
       const toggle = (field) => async (next) => {
         const seq = (seqRef.current += 1)
         setNotice(null)
         let accepted = false
         try {
-          accepted = (await setField(field, next)) === true
+          accepted = (await setField(field, fieldValue(field, next))) === true
         } catch (_error) {
           accepted = false
         }

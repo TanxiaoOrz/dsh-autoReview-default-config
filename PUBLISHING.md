@@ -3,7 +3,7 @@
 > **首发执行计划**（逐条照着做、带勾选框的那种）见 [RELEASE-PLAN.md](./RELEASE-PLAN.md)。
 > 本文是**长期维护手册**：安装、验证、四级回退、发布规格。
 >
-> 适用版本：`dsh-auto-review-custom@0.1.0`，适配宿主 `0.2.0-rc.2`
+> 适用版本：`dsh-auto-review-custom@0.1.1`，适配宿主 `0.2.0-rc.2`
 > 本文所有命令都在 **Windows + PowerShell** 下验证过。
 
 ---
@@ -74,10 +74,10 @@ dsh plugin --profile web add "file:D:/Program Code/plugins/AutoReviewCustom"
 # 先打包
 cd "D:\Program Code\plugins\AutoReviewCustom"
 npm.cmd pack
-# → 生成 dsh-auto-review-custom-0.1.0.tgz
+# → 生成 dsh-auto-review-custom-0.1.1.tgz
 
 # 再装
-dsh plugin --profile web add "file:D:/Program Code/plugins/AutoReviewCustom/dsh-auto-review-custom-0.1.0.tgz"
+dsh plugin --profile web add "file:D:/Program Code/plugins/AutoReviewCustom/dsh-auto-review-custom-0.1.1.tgz"
 ```
 
 #### 方式 C：从 npm 装（发布后）
@@ -412,7 +412,7 @@ npm.cmd publish --access public
 ### 4.6 后续版本
 
 ```powershell
-npm.cmd version patch    # 0.1.0 → 0.1.1
+npm.cmd version patch    # 0.1.1 → 0.1.2
 npm.cmd publish --access public
 ```
 
@@ -447,7 +447,7 @@ DSH **没有**独立的插件市场服务器。我读过 `dsh-plugin-manager` �
 | 格式 | 示例命令 |
 |---|---|
 | npm 包名 | `dsh plugin --profile web add dsh-auto-review-custom` |
-| 带版本 | `dsh plugin --profile web add dsh-auto-review-custom@0.1.0` |
+| 带版本 | `dsh plugin --profile web add dsh-auto-review-custom@0.1.1` |
 | GitHub 简写 | `dsh plugin --profile web add "github:你的账号/AutoReviewCustom"` |
 | Git URL | `dsh plugin --profile web add "https://github.com/你的账号/AutoReviewCustom"` |
 | Git SSH | `dsh plugin --profile web add "git@github.com:你的账号/AutoReviewCustom.git"` |

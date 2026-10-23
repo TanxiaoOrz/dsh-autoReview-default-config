@@ -1,6 +1,6 @@
-# 发布方案 · dsh-auto-review-custom v0.1.0
+# 发布方案 · dsh-auto-review-custom v0.1.1
 
-> 本文是**这一次首发**的具体执行计划，可逐条照着做。
+> 本文是**这一次发布**的具体执行计划，可逐条照着做。
 > 长期维护手册（安装/验证/四级回退）见 [PUBLISHING.md](./PUBLISHING.md)；
 > 宿主兼容性见 [VERSIONS.md](./VERSIONS.md)。
 >
@@ -13,12 +13,10 @@
 | 项 | 值 |
 |---|---|
 | 包名 | `dsh-auto-review-custom` |
-| 版本 | `0.1.0` |
+| 版本 | `0.1.1`（相对 0.1.0 的**修订号 +1**：只修 bug，无破坏性变更） |
 | 适配宿主 | `0.2.0-rc.2` |
-| 包名占用 | ✅ **已验证可用**（registry 查无此包） |
-| 打包文件数 | **18**（解包 187.7 KB，tgz 64.5 KB；含 npm 自动并入的 `LICENSE`） |
-| tarball | `dsh-auto-review-custom-0.1.0.tgz` |
-| shasum | `340dd48ce85cbc5c73eeb81332c8390f104ccc6c` |
+| 本版修了什么 | 设置页「新会话默认启用 Auto review」开关保存失败（根因与修法见 [VERSIONS.md §7](./VERSIONS.md#7-已修的设置页-bug开关布尔值-vs-联合类型字段011)） |
+| tarball | `dsh-auto-review-custom-0.1.1.tgz` |
 
 ---
 
@@ -113,7 +111,7 @@ Remove-Item *.tgz -Force -ErrorAction SilentlyContinue
 npm.cmd pack
 ```
 
-产出 `dsh-auto-review-custom-0.1.0.tgz`。
+产出 `dsh-auto-review-custom-0.1.1.tgz`。
 
 **校验解包内容**：
 
@@ -121,7 +119,7 @@ npm.cmd pack
 $tmp = Join-Path $env:TEMP "arc-pack-verify"
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-tar -xzf "dsh-auto-review-custom-0.1.0.tgz" -C $tmp
+tar -xzf "dsh-auto-review-custom-0.1.1.tgz" -C $tmp
 Get-ChildItem "$tmp\package" -Recurse -File | ForEach-Object { $_.FullName.Replace("$tmp\package\", '') }
 node --check "$tmp\package\lib\index.js"
 node --check "$tmp\package\client.js"
@@ -152,7 +150,7 @@ npm.cmd view dsh-auto-review-custom version --registry https://registry.npmjs.or
 
 - [ ] `whoami` 返回你的账号
 - [ ] `publish` 成功
-- [ ] `view` 返回 `0.1.0`
+- [ ] `view` 返回 `0.1.1`
 
 **别人怎么装**：
 
@@ -164,7 +162,7 @@ dsh plugin --profile web add dsh-auto-review-custom
 
 ```powershell
 # 用 tarball 装
-dsh plugin --profile web add "file:D:\path\to\dsh-auto-review-custom-0.1.0.tgz"
+dsh plugin --profile web add "file:D:\path\to\dsh-auto-review-custom-0.1.1.tgz"
 
 # 或用整个目录装（适合还在频繁改）
 dsh plugin --profile web add "file:D:\Program Code\plugins\AutoReviewCustom"
@@ -230,9 +228,9 @@ node -e "const p=require('$env:DSH_HOME/profiles/web/package.json'); console.log
 
 | 变更类型 | 版本 |
 |---|---|
-| 适配新的宿主版本 | 次版本号 +1（`0.1.0` → `0.2.0`） |
-| 修 bug / 改文案 | 修订号 +1（`0.1.0` → `0.1.1`） |
-| 破坏性改配置字段 | 主版本号 +1（`0.1.0` → `1.0.0`） |
+| 适配新的宿主版本 | 次版本号 +1（`0.1.1` → `0.2.0`） |
+| 修 bug / 改文案 | 修订号 +1（`0.1.1` → `0.1.2`） |
+| 破坏性改配置字段 | 主版本号 +1（`0.1.1` → `1.0.0`） |
 
 ---
 
@@ -255,9 +253,9 @@ node -e "const p=require('$env:DSH_HOME/profiles/web/package.json'); console.log
 
 | 步骤 | 状态 |
 |---|---|
-| §2 测试全绿 | ✅ 已通过（29+40+40+38+replay+e2e） |
+| §2 测试全绿 | ✅ 已通过（35+40+40+38+replay+e2e） |
 | §2 已装副本一致 | ✅ 15 个文件一致 |
 | §2 真实环境冒烟 | ✅ `typert-registered 5 invocations`、提示词注入命中 |
-| §3 打包 | ✅ `dsh-auto-review-custom-0.1.0.tgz` 已生成并解包复验 |
+| §3 打包 | ✅ `dsh-auto-review-custom-0.1.1.tgz` 已生成并解包复验 |
 | §4 分发 | ⬜ 未执行（等你决定走哪条路线） |
 | §5 bundles 登记 | ⬜ 本机已登记；分发后需对端确认 |
