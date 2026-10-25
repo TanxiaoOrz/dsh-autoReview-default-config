@@ -29,6 +29,7 @@ yarn-error.log*
 auto-review/
 probe.log
 decisions.jsonl
+denials.jsonl
 
 # ── CLI 原子写留下的旁路文件 ────────────────────────────────────────────────
 # lib/manage.js 的 writeAtomic() 会写 `<文件名>.bak-<ISO时间戳>` 和

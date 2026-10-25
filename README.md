@@ -2,7 +2,8 @@
 
 DSH（DeepSeek Harness）的 **Auto review 增强插件**。
 
-> 适配宿主：`0.2.0-rc.2`。宿主升级后**必须先跑** `node bin/manage.mjs check-compat`，
+> 适配宿主：**`>=0.2.0 <0.3.0`**（已逐点核对 `0.2.0-rc.2` 与 `0.2.1-rc.2`）。
+> 落在区间外的版本，升级后**必须先跑** `node bin/manage.mjs check-compat`，
 > 再按 [VERSIONS.md §6](./VERSIONS.md#6-设置页与提示词文件通道的升级检查清单f5f11)
 > 冒烟一遍设置页。兼容性维护流程见 [VERSIONS.md](./VERSIONS.md)。
 
@@ -14,10 +15,12 @@ DSH（DeepSeek Harness）的 **Auto review 增强插件**。
 |---|---|---|---|
 | ① | 新会话建好后自动进入 `auto`（Auto review）权限预设 | `session/created` | **关** |
 | ② | **文件类工具静态放行**：目标在沙箱可写根内 → 免审直接执行 | `tools/pre-execute` | 开 |
-| ③ | **审查提示词**两档（全局 + 工作区）注入审查请求 | `llm/stream` | 开 |
+| ③ | **审查提示词**三档（全局 + 工作区 + 会话）注入审查请求 | `llm/stream` | 开 |
+| ④ | **拒绝记录**：审查器没放行的调用写进 `denials.jsonl`（含工作区/会话/理由） | `tools/pre-execute` | 开 |
+| ⑤ | **AutoReview 管理页签**：右栏里编辑本工作区/本会话提示词 + 看被拒记录 | `sidebar.right.pane.tab` | — |
 | — | **设置界面**：五个控件全在「设置 → Auto Review」里 | `settings.section` | — |
 
-三个功能都有独立开关，关掉任何一个不影响另外两个。
+各功能都有独立开关，关掉任何一个不影响其它。
 
 ### 当前唯一的行为模型
 
@@ -25,9 +28,11 @@ DSH（DeepSeek Harness）的 **Auto review 增强插件**。
 工具调用
 ├─ 文件类工具（read/write/edit）且目标路径在沙箱可写根内 → 静态放行（{kind:'allow'} 短路）
 └─ 其它一切（含所有 pwsh 命令）                        → 交给 auto review 的 AI 判断
+                                                          ↓
+                                                     判决落进 denials.jsonl
 ```
 
-就这两条。**没有正则白名单，也没有静态安全底线**（历史上有过，已删除，原因见下文）。
+**没有正则白名单，也没有静态安全底线**（历史上有过，已删除，原因见下文）。
 
 ---
 
@@ -47,6 +52,34 @@ dsh plugin --profile web add dsh-auto-review-custom
 
 详细的安装 / 验证 / 回退步骤见 [PUBLISHING.md](./PUBLISHING.md)，
 首发执行清单见 [RELEASE-PLAN.md](./RELEASE-PLAN.md)。
+
+### ⚠️ 本地开发 vs GitHub 安装（会互相覆盖）
+
+profile 里那条依赖决定**装哪份代码**。两种写法不能混用：
+
+| 场景 | 依赖写法 | 行为 |
+|---|---|---|
+| 本地开发 | `file:D:/Program Code/plugins/AutoReviewCustom` | pnpm 装本地工作区的副本；改完源码要 `pnpm install` 或直接覆盖文件 |
+| 发布使用 | `github:<owner>/<repo>` | pnpm 按 **lockfile 的 commit** 从 GitHub 拉，**会覆盖本地手改** |
+
+**2026-10-25 踩过**：手工把 0.2.0 文件复制进 `node_modules` 之后，profile 的
+一次 `pnpm install` 按 `github:` 声明把整个包重装成远端的 0.1.1，页签连同
+0.2.0 的功能一起消失，看起来像"升级后功能消失"。排查线索：
+`node_modules/<包>/package.json` 的 version、`node_modules/.modules.yaml` 的修改时间。
+
+**开发期切本地**（用 node 改 JSON，别用 `Set-Content`，它会写 BOM 弄坏 package.json）：
+
+```powershell
+cd "$env:DSH_HOME\profiles\web"
+node -e "const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.dependencies['dsh-auto-review-custom']='file:D:/Program Code/plugins/AutoReviewCustom';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+& 'D:\Program Code\NodeLib\global\node_modules\pnpm\pnpm.exe' install
+```
+
+> 本机 `pnpm.ps1` 被执行策略拦死（`running scripts is disabled`），必须用上面的原生 exe。
+
+**开发完成切回 GitHub**：把依赖改回 `github:<owner>/<repo>` 再 `pnpm install`，
+并确认 `node_modules/<包>/package.json` 的 version 是你要的那一版（不是旧 commit）。
+切换后本地源码改动不再影响运行时。
 
 ---
 
@@ -123,6 +156,10 @@ Auto Review
   └───────────────────────────────────┘
   [添加]
 ```
+
+**会话提示词不在这里**——它在会话自己的右栏页签里（功能⑤）。
+这样设计是因为会话档的生命周期跟会话绑定：放在设置页里，用户得先知道
+会话 id 才能编辑，而那个 id 平时是看不见的。
 
 ### 两条数据通道（各用其所）
 
@@ -252,23 +289,40 @@ const denialReason = decision.kind === "allow" ? this.guardReason(exec) : decisi
 
 ---
 
-## 功能③：审查提示词（全局 + 工作区）
+## 功能③：审查提示词（全局 + 工作区 + 会话）
 
 审查器每审一个工具调用就发一次 LLM 请求。插件在 **`llm/stream`** 拦截这个请求，
 把提示词追加进 `PROJECT_INSTRUCTIONS` 段（角色固定为 `constraint`）。
 
 这里的监听器**永远不吞请求**，只做注入；放行判定在功能②。
 
-### 两档作用域
+### 三档作用域
 
 | 档 | 何时生效 | 文件 |
 |---|---|---|
 | **全局** `global` | 所有会话 | `prompts/global.md` |
 | **工作区** `workspace` | 审查请求的 `ENVIRONMENT.cwd` 落在该工作区路径之下 | `prompts/workspace/<目录名>/note.md` + `meta.json` |
+| **会话** `session` | 该会话发起的审查请求 | `prompts/session/<会话id>.md` |
 
-**合成顺序：全局在前，工作区在后。** 越具体越靠后（压轴位置权重更高，与
+**合成顺序：全局 → 工作区 → 会话。** 越具体越靠后（压轴位置权重更高，与
 `REVIEW_POLICY` 的 "more specific takes precedence" 一致）。合成后每段带
-`[global:global]` / `[workspace:<目录名>]` 标题前缀，便于在日志和审查请求里辨识。
+`[global:global]` / `[workspace:<目录名>]` / `[session:<会话id>]` 标题前缀，
+便于在日志和审查请求里辨识。
+
+### ⚠️ 会话档的关键约束（务必理解）
+
+审查请求的 user 文本只有四段（`ENVIRONMENT / PROJECT_INSTRUCTIONS /
+FILTERED_HISTORY / PENDING_ACTION`），**`ENVIRONMENT` 里只有 `cwd`，没有会话 id**。
+
+所以会话档不能靠审查请求匹配，只能**旁路绑定**：插件在 `tools/pre-execute`
+里拿到 `exec.agent.session.id`，把「当前这个 cwd 上正在被审的是哪个会话」记进
+一个**按 cwd 隔离、15 秒过期**的槽；随后 `llm/stream` 收到审查请求时从这个槽取。
+
+语义是**尽力而为**，不是严格隔离：
+
+- 两个会话在同一 cwd 上**同时**发审查请求时，可能取不到（或取到最近那次）；
+- 取不到就**不注入**会话档——**宁可漏，也不串**；
+- 15 秒是经验值（一次审查请求通常在数秒内完成）。
 
 ### 工作区档怎么匹配
 
@@ -322,7 +376,125 @@ node bin/manage.mjs rm-workspace --name <目录名>
 
 ---
 
-## 审查请求的重试
+## 功能④：拒绝记录（`denials.jsonl`）
+
+0.1.x 只记 `decisions.jsonl`，而且**只记插件自己放行的那一条**。审查器判 deny、
+或者把决定弹给用户的结果，**从来没落过盘**。想复盘"该给这个工作区补什么提示词"，
+最关键的数据一条都不存在。
+
+0.2.0 起，`tools/pre-execute` 里 `await next()` 的返回值（审查器的**最终判决**）
+会被记进 `$DSH_HOME/auto-review/denials.jsonl`。
+
+### 记录什么
+
+| 字段 | 含义 |
+|---|---|
+| `t` | ISO 时间 |
+| `kind` | `deny`（硬拒绝）/ `ask`（判 deny 但弹给用户）/ `fail`（审查器自身失败，fail-closed） |
+| `tool` | 工具名 |
+| `sessionId` | **会话 id**（回答"哪个会话"） |
+| `cwd` | 会话工作目录 |
+| `workspace` | 命中的**工作区档目录名**（回答"哪个工作区"）；没配档时为 `null` |
+| `reason` | 审查器给的理由原文 |
+| `arg` | 参数摘要（`file_path` / `command` 优先，凭据已脱敏） |
+
+### 怎么区分三种 kind
+
+判决形状（`dsh-tools/lib/index.js:3241-3253`）：
+
+| 场景 | kind | 说明 |
+|---|---|---|
+| 审查跑完、判 deny | `deny` + `info.code = AUTO_REVIEW_DENIED` | 真结论 |
+| 审查请求本身跑挂（网络/超时） | `deny`（`failed()` 分支） | 归为 `fail`，不是提示词问题 |
+| 判 deny 但弹给用户裁决 | `ask` | 用户后续可能批准 |
+| 会话被中止 | `cancel` | 归为 `fail` |
+
+### 查询
+
+```bash
+node bin/manage.mjs denials --summary                 # 按工作区/会话/工具/结论排行
+node bin/manage.mjs denials --workspace <目录名>       # 某个工作区
+node bin/manage.mjs denials --session <会话id>         # 某个会话
+node bin/manage.mjs denials --cwd "D:\work"            # 某个目录（含子目录）
+node bin/manage.mjs denials --kind fail                # 只看审查器跑挂的
+node bin/manage.mjs denials --contains 凭据            # 关键字
+```
+
+配套 Skill：**`autoreview-denial-log`**（按提示词复盘的口径解读这些记录）。
+
+### 参数摘要为什么重新实现
+
+0.1.x 的 `audit()` 直接 `JSON.stringify(args).slice(0, 200)`。实测 1086 条里
+**653 条正好截在 200 字符**，其中 197 条是 `write`/`edit`——`content` 排在前面
+把 `file_path` 挤掉了，记录退化成「某人写了 200 字符」，无法复盘。
+
+`lib/denials.js` 的 `summarizeArgs()` 改成**先抽关键字段再截断**：
+`file_path` / `path` / `command` 一定保留。
+
+---
+
+## 功能⑤：AutoReview 管理页签（右栏）
+
+会话标题旁有一个 **「AutoReview 管理」** 按钮，点开在右栏开一个页签。
+它解决的是"**就这一次会话**想调口径"——0.1.x 只能改工作区档，那会连带影响
+同一工作区的所有会话。
+
+页签里三块：
+
+1. **当前工作区提示词** —— 按本会话 cwd 命中的那个工作区档（最长匹配），
+   可直接编辑保存。没有匹配档时明确说明「保存会新建一个」。
+2. **当前会话提示词** —— 保存即写 `prompts/session/<会话id>.md`，传空等于删除。
+3. **被拒绝的记录** —— 三档 scope 切换：**本会话 / 本工作区 / 全部**，
+   新的在前，每行带「追加为提示词」按钮。
+
+> ⚠️ **追加按钮只填草稿、不保存。** 审查理由原文是"为什么拒绝"，不是"允许什么"。
+> 直接落盘会把禁止性描述当成授权提示词喂回去，反而误导审查器。必须由人改成
+> 正向表述后再点保存。追加的目标框跟随 scope：看本会话记录时进会话档，
+> 看本工作区记录时进工作区档——避免"看着 A 却改到 B"。
+
+### 只在 Auto review 预设下出现
+
+这个页签的全部内容只有在审查器真的在跑时才有意义。入口按钮读会话的
+`permissions` 投影（`useProjection('permissions')` → `{ currentValue }`），
+**不是 `auto` 就不渲染**。
+
+- 投影还没到达（`undefined`）时**按可见处理**——会话刚建好时可能短暂没有该帧，
+  此时隐藏会让按钮闪一下。
+- 页签内部也做同一道门禁：非 `auto` 时禁用编辑并说明原因，而不是让人对着灰框猜。
+
+### 技术要点
+
+- 两阶段注册（`ui-sidebar-right` 的扩展点）：
+  `sidebarRightTabs.register({ id, kind, priority:'extension', guide })` 声明类型，
+  `slots.register('sidebar.right.pane.tab', { key: id })` 提供正文，
+  `slots.register('sidebar.right.pane.tab.title', { key: id })` 提供 chip 标题。
+- ⚠️ **页签注册必须放在独立子插件里**（`ctx.plugin({ inject: ['slots','sidebarRightTabs','sidebarRight'], apply })`），
+  **不能**把 `sidebarRightTabs` / `sidebarRight` 写进本插件的**顶层** `inject`。
+  原因：cordis 的注入是**强制**语义——顶层 `inject` 里列了缺失的服务，整个插件
+  fiber 直接判 INACTIVE，`apply` 一行不跑。右栏只在部分构建里存在，写进顶层会让
+  **设置页跟着一起消失**。实测复现：
+  ```
+  inject:['slots']                        + slots 存在        → 应用了
+  inject:['slots','sidebarRightTabs']     + 后者缺失          → 未应用（整插件不跑）
+  ```
+  拆成子插件后：无右栏 → `[父插件应用]`；有右栏 → `[父插件应用, 子插件应用]`，
+  设置页始终可用。`scripts/client-structure-test.mjs` 的「注入隔离」分组
+  锁死了这条，防止回归。
+- 页签是 `scope: 'session'` 槽位，`sessionId` 与 `useProjection` 由框架注入。
+- **cwd 必须走缓存**（这是 0.2.0 的一个实机 bug，已修）：`SessionSnapshot` 不含
+  cwd，而 `ctx.agents.get(id)` 拿到的 `Agent` **类型上只有 `{ id }`**、没有
+  `.session`（Host `Service.listService('agents')` 的 referencedTypes 可查），
+  所以 `agent.session.header.cwd` 恒为 undefined → 页签「目录: —」、工作区输入框
+  全灰、无法保存。
+  修法：在 **`tools/pre-execute`** 里把 `exec.agent.session.header.cwd`
+  （这个**一直是准的**）写进 `sessionId → cwd` 缓存，`readSessionContext` 先查缓存。
+  反查顺序见 `lib/session-cwd.js`：**缓存 → `workspaceRegistry` 的 `sessionIds` 归属
+  → `agents` 探测**，每层结果记进 `probe.log`（`cwd-miss … via=… registry=… agents=…`）。
+  缓存未命中时页签还提供「从已注册工作区选择…」兜底，不会死锁。
+- 会话页签与设置页**共用同一个 Remote 挂载单例**（`mountPromptRemote`），
+  不会重复 `$mount`。
+
+---
 
 宿主自带的重试挂在 `agent/request-error` 上，**只有 agent loop 会派发**；
 而审查器走的是裸 `ctx.llm.stream()`，完全绕过那条路。结果：同一类瞬时传输错误，
@@ -347,13 +519,19 @@ signal 中止时立刻停止等待
 ## 命令速查
 
 ```bash
-node bin/manage.mjs doctor          # 自检数据目录 / 配置 / 两档提示词
-node bin/manage.mjs list            # 列出配置、全局提示词、每个工作区档的 name+path
+node bin/manage.mjs doctor          # 自检数据目录 / 配置 / 三档提示词 / 拒绝记录
+node bin/manage.mjs list            # 列出配置、全局档、工作区档、会话档、拒绝记录条数
 node bin/manage.mjs check-compat    # 验证审查请求识别仍成立（宿主升级后必跑）
 
 node bin/manage.mjs set-global      # 写全局提示词
 node bin/manage.mjs set-workspace   # 写工作区提示词（--path / --text [--name]）
 node bin/manage.mjs rm-workspace    # 删除工作区档（--name）
+
+node bin/manage.mjs set-session     # 写会话档（--session <id> --text "..."）
+node bin/manage.mjs rm-session      # 删除会话档（--session <id>）
+node bin/manage.mjs list-sessions   # 列出所有会话档
+
+node bin/manage.mjs denials         # 查拒绝记录（--summary / --workspace / --session / --cwd / --kind / --contains / --since / --limit）
 ```
 
 公共选项 `--home <目录>` 可指定 `DSH_HOME`（缺省读环境变量）。
@@ -363,6 +541,13 @@ node bin/manage.mjs rm-workspace    # 删除工作区档（--name）
 > **不生效**，输出里也会警告。改开关请用设置页，或直接编辑
 > `profiles/<profile>/cordis.patch.yml` 里 `auto-review-custom` 的 `config` 块。
 
+### 配套 Skill
+
+| Skill | 干什么 |
+|---|---|
+| `autoreview-denial-log` | 读 `denials.jsonl`，按工作区/会话/工具统计，判断该补哪条提示词 |
+| `autoreview-prompt-append` | 选对作用域（全局/工作区/会话）并把判断写成合格的 constraint |
+
 ---
 
 ## 数据目录
@@ -370,18 +555,28 @@ node bin/manage.mjs rm-workspace    # 删除工作区档（--name）
 ```
 $DSH_HOME/auto-review/
 ├── probe.log                           # 启动/门禁/Remote 探针（排查"装了但没反应"）
-├── decisions.jsonl                     # 静态放行的审计记录
+├── decisions.jsonl                     # 插件**自己放行**的审计记录（ruleId + action=allow）
+├── denials.jsonl                       # 审查器**没放行**的记录（0.2.0 新增：kind + reason + 会话/工作区）
 ├── config.json                         # 【历史】开关，仅作 Config 未声明时的回落
 └── prompts/
     ├── global.md                       # 全局档
-    └── workspace/
-        └── <叶名>-<哈希>/
-            ├── note.md                 # 工作区档提示词
-            └── meta.json               # {"path":"<工作区绝对路径>"}
+    ├── workspace/
+    │   └── <叶名>-<哈希>/
+    │       ├── note.md                 # 工作区档提示词
+    │       └── meta.json               # {"path":"<工作区绝对路径>"}
+    └── session/
+        └── <会话id>.md                  # 会话档提示词（0.2.0 新增）
 ```
 
+两个 jsonl 分工明确，**互不替代**：
+
+| 文件 | 记的是 | 有 `reason` |
+|---|---|---|
+| `decisions.jsonl` | 插件自己做的静态放行（`ruleId` + `action: allow`） | ❌ |
+| `denials.jsonl` | 审查器的结论（`deny` / `ask` / `fail`） | ✅ |
+
 任何文件写坏都不会让插件崩溃：`config.json` 解析失败时保留上一版有效值并打 warn；
-从未成功加载过则用默认值。
+从未成功加载过则用默认值。`denials.jsonl` 的坏行在读取时跳过，不影响其余记录。
 
 ---
 
@@ -389,9 +584,11 @@ $DSH_HOME/auto-review/
 
 ```bash
 node --check client.js lib/index.js      # 语法检查
-node scripts/client-structure-test.mjs   # 29 项设置页结构性检查
+node scripts/client-structure-test.mjs   # 73 项设置页 + 页签结构性检查
 node scripts/selftest.mjs                # 40 项纯逻辑自测
 node scripts/prompt-store-test.mjs       # 40 项提示词文件存储
+node scripts/denial-session-test.mjs     # 54 项拒绝记录 + 会话档 + 绑定槽（0.2.0）
+node scripts/session-cwd-test.mjs        # 25 项会话→cwd 三层反查（含 Agent 无 session 的实机形态）
 node scripts/retry-test.mjs              # 38 项重试逻辑
 node scripts/host-version-test.mjs       # 9 项宿主版本检测
 node scripts/replay-test.mjs             # 冻结 options 重写
@@ -399,25 +596,27 @@ node scripts/e2e-sim.mjs                 # 端到端模拟（静态放行/提示
 node scripts/read-session-log.mjs <session.v4.jsonl.zstd>   # 解会话事件日志
 ```
 
-测试都在**工作区**跑，不启动 DSH。所以 `lib/replay.js` / `lib/prompt-store.js`
-刻意不依赖任何 Harness 包（`lib/schema.js` 要 `schemastery`，`lib/typert.js` 要
-`zod`，测试不 import 它们）。
+测试都在**工作区**跑，不启动 DSH。所以 `lib/replay.js` / `lib/prompt-store.js` /
+`lib/session-prompts.js` / `lib/denials.js` 刻意不依赖任何 Harness 包
+（`lib/schema.js` 要 `schemastery`，`lib/typert.js` 要 `zod`，测试不 import 它们）。
 
 ### 文件职责
 
 | 文件 | 职责 |
 |---|---|
-| `lib/index.js` | 插件入口：门禁、三个功能的挂载、Remote 服务 |
+| `lib/index.js` | 插件入口：门禁、各功能的挂载、Remote 服务 |
 | `lib/schema.js` | `Config` schema（5 个 volatile 字段） |
 | `lib/rules.js` | 文件类工具的静态放行判定（复刻沙箱语义） |
-| `lib/prompts.js` | 提示词合成 + `cwdOfReviewText` |
+| `lib/prompts.js` | 三档提示词合成 + `cwdOfReviewText` + `findWorkspaceId` |
 | `lib/prompt-store.js` | 提示词文件的读写（纯 Node，可测） |
+| `lib/session-prompts.js` | **会话档存储 + 会话↔cwd 绑定槽**（0.2.0，纯 Node，可测） |
+| `lib/denials.js` | **拒绝记录写入与查询 + 参数摘要 + 脱敏**（0.2.0，纯 Node，可测） |
 | `lib/replay.js` | 审查请求重发 + 重试（纯 Node，可测） |
 | `lib/compat.js` | 审查请求指纹识别 + 提示词注入 |
 | `lib/typert.js` | Remote 通道清单（Host `TYPERT` + Client `TYPERT_REMOTE`） |
 | `lib/config.js` | `config.json` 回落读取 |
 | `lib/manage.js` + `bin/manage.mjs` | CLI |
-| `client.js` | 浏览器半区：设置页 |
+| `client.js` | 浏览器半区：设置页 + **会话页签** |
 
 ### 三个必须知道的坑
 
@@ -485,14 +684,24 @@ if (!review.ok) return failed(exec, review.error)   // → { kind: 'deny' }
 > 另注：审查用的模型**跟随会话当前模型**（`session.requestHeader()`），
 > 不是固定模型。所以换模型会连带改变审查的质量、成本和稳定性。
 
-### 宿主版本不匹配会在装载时告警
+### 宿主版本兼容性
+
+| 项 | 值 |
+|---|---|
+| 兼容区间 | **`>=0.2.0 <0.3.0`**（同一 minor 内的补丁/预发布版本都接受） |
+| 逐点核对过 | `0.2.0-rc.2`（本机实测）、`0.2.1-rc.2`（下载厂商包逐条核对 F1–F11） |
+| 判定方式 | 只比 `major.minor`，不看 `-rc.N` 标签——标签变化不影响内部事实表 |
 
 插件启动时会读取**当前进程实际运行的那套 DSH** 的版本（从 `process.argv[1]` 上溯到
-安装目录，读 `@deepseek-ai/dsh/package.json`），与本插件适配的 `0.2.0-rc.2` 比对。
+安装目录，读 `@deepseek-ai/dsh/package.json`），与上面的区间比对。
 
-不一致就 `warn` 一条明确的提示，并在 `probe.log` 写
+**落在区间外**才 `warn` 一条明确的提示，并在 `probe.log` 写
 `host-versions: MISMATCH actual=… expected=…`。这样别人装到别的版本上时能**当场看到**，
 而不是遇到「装了个没用的东西」还找不到原因。
+
+> **为什么不写死成单个精确版本**：0.1.x 曾只认 `0.2.0-rc.2`，宿主发 `0.2.1-rc.2` 后
+> 即使 F1–F11 逐条都没变也会误报 MISMATCH，用户看到「版本不匹配」就以为插件坏了。
+> 现在改成区间 + 一份 `VERIFIED_HOST_VERSIONS` 逐点核对清单（见 `lib/compat.js`）。
 
 > **不会误报**：判定只认 `@deepseek-ai/dsh` 这一个包，且**拿不到版本就静默跳过**
 > （返回 `unknown` 不告警）。故意不从 `import('@deepseek-ai/...')` 读版本——那会读到

@@ -3,6 +3,11 @@
 > 本文件是**插件与宿主兼容性**的唯一权威记录。
 > 宿主（DSH / `@deepseek-ai/*`）任何一次升级，都必须按本文流程复验；
 > 不兼容则发新版插件，并在下表追加一行。
+>
+> **当前兼容区间：`>=0.2.0 <0.3.0`**（已逐点核对 `0.2.0-rc.2`、`0.2.1-rc.2`）。
+> ⚠️ 下表「出处」列的行号是 **0.2.0-rc.2** 时的快照。0.2.1-rc.2 已把
+> `dsh-api-gateway` 的 `lib/client.js` 拆成 `client.browser.js` / `client.node.js`，
+> **行号会漂移**——检索时请按「文件名 + 符号名」（如 `validateBinding`），别按旧行号。
 
 ---
 
@@ -45,23 +50,72 @@
 | 插件版本 | 宿主版本 | 状态 | 备注 |
 |---|---|---|---|
 | 0.1.0 | `0.2.0-rc.2` | ✅ 已验证 | 基于 pnpm store `@deepseek-ai+dsh@0.2.0-rc.2_6751…` 逐行阅读核实 |
+| 0.1.1 | `0.2.0-rc.2` | ✅ 已验证 | 修 0.1.0 的设置页「保存失败」：`defaultPreset` 开关把布尔透传给 `'auto' \| 'off'` 联合类型字段（见 §7） |
+| 0.1.1 | `0.2.1-rc.2` | ✅ 已验证 | 下载 0.2.1-rc.2 的六个厂商包（auto-review / permission-presets / api-gateway / settings / client-ui-settings / config-editor）逐条核对 F1–F11 全部成立；同时把版本判定从「精确一条」改成「区间」 |
+| **0.2.0** | `0.2.0-rc.2` | ✅ 已验证 | **新增功能④拒绝记录 + ⑤会话页签 + 会话级提示词**。都建立在**已有**内部事实上（判决形状 F12、右栏扩展点 F13），不需要新宿主能力；F1–F11 全部沿用。`scripts/denial-session-test.mjs` 46 项 + 既有 164 项全通过 |
 
-**验证过的包版本**（`lib/compat.js` 的 `VERIFIED_PACKAGES`）：
+### 2.0.1 0.2.0 新增依赖的两条内部事实
+
+| # | 我们依赖的内部事实 | 出处（0.2.0-rc.2） | 一旦改动会怎样 |
+|---|---|---|---|
+| **F12** | `tools/pre-execute` 的 waterfall 返回值形状为 `{kind:'allow' \| 'deny' \| 'ask' \| 'cancel', reason?, info?}`；用 `prepend: true` 注册的监听器 `await next()` 拿到的**就是下游（含 auto review）的最终判决** | `dsh-tools/lib/index.js:3225`（`ctx.waterfall(...,"tools/pre-execute",exec,...)`）、`:3241-3253`（消费 `decision`） | 功能④取不到判决 → `denials.jsonl` 空；会话绑定也拿不到 `exec.agent.session` |
+| **F13** | 右栏页签两阶段扩展点：`ctx.sidebarRightTabs.register({id, kind, priority, title, guide})` + `slots.register('sidebar.right.pane.tab', {key: id})` + 可选 `sidebar.right.pane.tab.title`；`openTab(kind)` 会展开面板 | `dsh-client-ui-sidebar-right/README.md`「Extension seats」、`lib/types/client/tab-registry.d.ts`、`lib/types/client/contract/slots.d.ts` | 功能⑤不出现或页签空白；**不影响设置页** |
+
+> 两条都是**可选**依赖，缺了不崩溃：
+> `sidebarRightTabs` / `sidebarRight` 用 `ctx.inject` 惰性获取，缺服务时页签静默不提供；
+> F12 若失效，判决落不进 `denials.jsonl`，但**放行/审查主流程不受影响**
+> （记录包在 `try/catch` 里，任何异常都不改变判决）。
+
+**兼容区间**：`>=0.2.0 <0.3.0`（同一 minor 内的补丁与预发布版本都接受）。
+判定只比 `major.minor`，不看 `-rc.N` 标签；`lib/compat.js` 的
+`VERIFIED_HOST_VERSIONS` 记录**逐点核对过**的版本，未列的区间内版本按不告警处理。
+
+### 2.1 0.2.1-rc.2 的核对结论（为什么敢声明兼容）
+
+| 事实 | 0.2.1-rc.2 现状 | 判定 |
+|---|---|---|
+| **F1** `REVIEW_POLICY` 开头 | 第 20 行起仍为 `REVIEW_POLICY⏎You are the final authorization reviewer…` | ✅ 未变 |
+| **F2** 四段拼接 | `reviewUserText()` 仍依次拼 `ENVIRONMENT / PROJECT_INSTRUCTIONS / FILTERED_HISTORY / PENDING_ACTION` | ✅ 未变 |
+| **F3** 判决协议 | `readDecision()` 仍是「零或多个 reasoning + 一个 text + 终止 finish(stop)」；`parseDecision()` allow 形态仍是 `{risk, decision}` 两成员 | ✅ 未变 |
+| **F4** `auto` 保留名 | `AUTO_PRESET = "auto"`；`names` 仍含 auto；`defaultOptions` 仍不含 | ✅ 未变 |
+| **F5** `$mount` 串行队列 | `async $mount(contribution)` 仍走 `this.enqueue(...)` | ✅ 未变 |
+| **F6** 信封形状 | 失败仍是 `{ok:false, error:rebuiltFailure(...)}`，成功仍是 `{ok:true, value:…}` | ✅ 未变 |
+| **F7** typert 绑定校验 | `validateBinding()` 仍 `Reflect.get(original,"typertRemote")` 并比对 service/serviceKey/namespace | ✅ 未变 |
+| **F8** 参数 codec strict | `requireStrictInputs()` 仍要求 `codec.mode === "strict"` | ✅ 未变 |
+| **F9** volatile 投影 | `volatileForm()` / `isVolatilePath()` 仍在，零 volatile 字段仍抛 `has no volatile fields` | ✅ 未变 |
+| **F10** ConfigForm API | `status/writable` 与 `set/unset/mutate` 签名不变 | ✅ 未变 |
+| **F11** config-editor 行定位 | 仍按 `id`，且 `name` 不匹配时不认该行（`(!item.has("name") || … === entry.options.name)`） | ✅ 未变 |
+
+> ⚠️ **唯一的结构性变化**：`dsh-api-gateway` 把 `lib/client.js` 拆成了
+> `lib/client.browser.js` + `lib/client.node.js`。逻辑未变，但**文档里的行号引用会失效**——
+> 引用位置时请按文件名+符号名检索，别按旧行号。本插件代码本身不受影响
+> （我们只用运行时 API，不 import 这些文件）。
+
+### 2.2 已经落在区间外时会怎样
+
+`0.1.5-rc.3`、`0.3.x` 等**不在** `>=0.2.0 <0.3.0` 内的版本会在装载时告警
+（`probe.log` 记 `host-versions: MISMATCH`）。此时先跑 `check-compat` 与 §6 冒烟；
+不兼容就按 §3.3 改适配点并发布新插件版本。
+
+**验证过的包版本**（`lib/compat.js` 的 `VERIFIED_PACKAGES`，**只用于诊断输出，不参与判定**）：
 
 ```
-# 功能①②③ 的判定基础
-@deepseek-ai/dsh-experimental-auto-review  0.2.0-rc.2
-@deepseek-ai/dsh-permission-presets        0.2.0-rc.2
+# 功能①②③ 的判定基础（0.2.0-rc.2 与 0.2.1-rc.2 均已核对）
+@deepseek-ai/dsh-experimental-auto-review  0.2.0-rc.2 / 0.2.1-rc.2
+@deepseek-ai/dsh-permission-presets        0.2.0-rc.2 / 0.2.1-rc.2
 @deepseek-ai/dsh-llm                       0.2.0-rc.2
 @deepseek-ai/dsh-session                   0.2.0-rc.2
 @deepseek-ai/dsh-workspace                 0.2.0-rc.2
 
 # 设置页与提示词文件通道（F5–F11）
-@deepseek-ai/dsh-api-gateway               0.2.0-rc.2
+@deepseek-ai/dsh-api-gateway               0.2.0-rc.2 / 0.2.1-rc.2
+@deepseek-ai/dsh-settings                  0.2.0-rc.2 / 0.2.1-rc.2
+@deepseek-ai/dsh-client-ui-settings        0.2.0-rc.2 / 0.2.1-rc.2
 @deepseek-ai/dsh-typert-protocol           0.2.0-rc.2
 @deepseek-ai/dsh-typert-registry           0.2.0-rc.2
-@deepseek-ai/dsh-client-ui-settings        0.2.0-rc.2
 ```
+
+> 判定不看这张表（否则每次宿主发补丁都要改代码）。它只写进 `probe.log` 便于排查。
 
 ---
 
@@ -250,7 +304,66 @@ Get-Content "$env:DSH_HOME\auto-review\prompts\global.md" -Raw
 # 会话事件日志（zstd 是分帧写的，普通解压只读到第一帧）
 node scripts/read-session-log.mjs "$env:DSH_HOME\sessions\<工作区转义名>\session-xxx\session.v4.jsonl.zstd"
 
-# 设置页结构性检查（不启动浏览器，29 项）
+# 设置页结构性检查（不启动浏览器，35 项，含开关取值映射回归）
 node scripts/client-structure-test.mjs
 ```
+
+---
+
+## 7. 已修的设置页 bug：开关布尔值 vs 联合类型字段（0.1.1）
+
+### 7.1 症状
+
+「设置 → Auto Review」里切换**「新会话默认启用 Auto review」**开关，红色横幅报
+**「保存失败」**，值不落盘。页面渲染正常，控件与当前值都能显示。
+
+### 7.2 根因
+
+设置页的开关组件（`Switch` → `ToggleRow`）**只产出布尔值**，但 `lib/schema.js` 里
+`defaultPreset` 是字符串联合类型：
+
+```js
+defaultPreset: z.union(['auto', 'off']).default('off')…
+```
+
+0.1.0 的 `toggle()` 把开关给的 `true/false` **原样**交给 `setField`，宿主 schema
+校验直接拒绝（探针抓到的真实报错）：
+
+```
+ValidationError: invalid config:
+  - $.defaultPreset expected "auto" | "off" but got true
+```
+
+旁证：同为开关的 `allowRules` / `prompts` 是 `z.boolean()`，从未报错——只有联合类型
+的那一个坏。也就是说 **UI 控件的取值类型必须与 schema 字段类型对齐**，这是本插件
+自己的一层映射责任，宿主不会替我们转。
+
+### 7.3 修法（0.1.1）
+
+`client.js` 里引入**一张显式映射表**，`toggle` 一律经它转换后再提交：
+
+```js
+const BOOLEAN_FIELD_VALUES = Object.freeze({
+  defaultPreset: { on: 'auto', off: 'off' },
+})
+const fieldValue = (field, next) => {
+  const mapping = BOOLEAN_FIELD_VALUES[field]
+  return mapping === undefined ? next : next ? mapping.on : mapping.off
+}
+// …
+accepted = (await setField(field, fieldValue(field, next))) === true
+```
+
+**为什么用表而不是在调用点写 `next ? 'auto' : 'off'`**：表把「字段类型」这个
+知识集中到一处，新增联合类型字段时只要不改表就会被回归测试抓到。对应测试在
+`scripts/client-structure-test.mjs` 的「开关取值映射」一节：它会扫 `lib/schema.js`
+里所有含 `.union(` 的字段，逐个断言已登记，**漏登记即测试失败**。
+
+### 7.4 复验方法
+
+1. `node scripts/client-structure-test.mjs` → 35 项全绿
+2. 重启 DSH，进设置页点该开关 → 显示「已保存」，且
+   `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 的 `auto-review-custom` 条目
+   出现 `defaultPreset: auto` / `off`
+
 

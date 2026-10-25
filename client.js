@@ -35,6 +35,15 @@ window.__ModuleLoader__.load({
     const REMOTE_NAMESPACE = 'autoReviewPrompts'
 
     /**
+     * `$mount` 的超时毫秒数。
+     *
+     * 网关把挂载塞进一条全局串行队列；队列被启动期的内置命名空间占住时
+     * `$mount` 可能长时间不 settle。没有超时就会表现为"页签永远未就绪"，
+     * 而这在 UI 上和"没有数据"长得一模一样。
+     */
+    const MOUNT_TIMEOUT_MS = 8000
+
+    /**
      * 惰性挂载的单例 Promise。
      *
      * 必须是**模块级**：同一次页面加载里重复打开设置页只挂一次，避免重复
@@ -107,7 +116,52 @@ window.__ModuleLoader__.load({
         descriptor('writeWorkspace', ['workspacePath', 'prompt']),
         descriptor('removeWorkspace', ['name']),
         descriptor('listWorkspaces', []),
+        descriptor('readSession', ['sessionId']),
+        descriptor('writeSession', ['sessionId', 'text']),
+        descriptor('listSessions', []),
+        descriptor('readSessionContext', ['sessionId']),
+        descriptor('readWorkspacePrompt', ['workspacePath']),
+        objectDescriptor('queryDenials', 'filter'),
       ],
+    }
+
+    /**
+     * 造一条**参数是单个对象**的调用描述符。
+     *
+     * 与 `param()` 的差别只在 codec：对象参数用 `z.record` 语义（任意键 →
+     * 任意值），这样筛选条件天然可缺省，不必为每个条件铺一个位置参数。
+     */
+    function objectDescriptor(method, name) {
+      return {
+        id: `dsh-auto-review-custom#autoReviewPrompts/${method}`,
+        service: 'autoReviewPrompts',
+        namespace: 'autoReviewPrompts',
+        method,
+        invocation: { kind: 'direct' },
+        parameters: [
+          {
+            name,
+            wire: name,
+            source: 'json',
+            codec: {
+              mode: 'strict',
+              typeSymbol: `dsh-auto-review-custom#autoReviewPrompts/${method}:parameter:0`,
+              // 客户端从不调用 create（参数原样进 args[wire]），给最小可自证实现。
+              create: () => ({
+                parse: (value) => {
+                  if (value === null || typeof value !== 'object') throw new Error('expected object')
+                  return value
+                },
+                safeParse: (value) =>
+                  value !== null && typeof value === 'object'
+                    ? { success: true, data: value }
+                    : { success: false, error: new Error('expected object') },
+              }),
+            },
+          },
+        ],
+        result: { mode: 'src-json' },
+      }
     }
 
     // ── 文案 ────────────────────────────────────────────────────────────
@@ -151,6 +205,45 @@ window.__ModuleLoader__.load({
       promptNotReady: 'The prompt channel is not ready yet; editing is disabled.',
       constraintNote:
         'Prompts are constraints: they can only narrow a decision, never authorize a riskier one. The reviewer policy itself is fixed by the host.',
+      // ── 会话页签（0.2.0）────────────────────────────────────────────
+      tabTitle: 'AutoReview',
+      tabGuideTitle: 'AutoReview',
+      tabGuideDescription: 'Review prompts and denials for this workspace and session',
+      workspacePromptTitle: 'Current workspace',
+      workspacePromptDescription:
+        'Applies to every session whose working directory is under this workspace prompt.',
+      workspacePromptPlaceholder:
+        'For example: this repo is a DSH plugin; run `node scripts/selftest.mjs` after edits.',
+      workspaceNoMatch:
+        'No workspace prompt matches this session’s directory yet. Saving below creates one.',
+      pickWorkspaceFallback: 'Pick a registered workspace…',
+      workspaceNoPromptYet: 'This workspace has no prompt yet — saving creates one.',
+      sessionPromptTitle: 'This session',
+      sessionPromptDescription:
+        'Appended after the workspace prompt, and only for review requests from this session.',
+      sessionPromptPlaceholder:
+        'For example: in this session, `pnpm pack` is allowed — I already said the old tarball can be replaced.',
+      denialsTitle: 'Recorded denials',
+      denialsDescription:
+        'Newest first. Each row is one call the reviewer refused; feed the reason into a prompt above.',
+      denialsEmpty: 'No denial recorded for this scope yet.',
+      denialsScope: 'Scope',
+      denialsAll: 'All',
+      denialsThisSession: 'This session',
+      denialsThisWorkspace: 'This workspace',
+      appendAsPrompt: 'Append to prompt',
+      appendPrefix: 'Allowed here: ',
+      refresh: 'Refresh',
+      scopeSession: 'Session',
+      scopeWorkspace: 'Workspace',
+      autoOnlyHint:
+        'This session is not using the Auto review preset, so the reviewer is not running. Switch the session to Auto review to manage its prompts here.',
+      cwdLabel: 'cwd',
+      sessionDefaultTitle: 'AutoReview',
+      retryChannel: 'Retry',
+      channelConnecting: 'Connecting to the prompt file channel…',
+      channelNotReady: 'The prompt file channel is not ready, so nothing below can load or save.',
+      channelLoadingData: 'Loading this session’s prompts and denials…',
     }
 
     const zh = {
@@ -189,6 +282,45 @@ window.__ModuleLoader__.load({
       promptNotReady: '提示词通道尚未就绪，暂时无法编辑。',
       constraintNote:
         '提示词是约束：只能收窄判断，不能授权更危险的动作。审查策略本身由宿主固定。',
+      // ── 会话页签（0.2.0）────────────────────────────────────────────
+      tabTitle: 'AutoReview 管理',
+      tabGuideTitle: 'AutoReview 管理',
+      tabGuideDescription: '维护本工作区与本会话的审查提示词、查看拒绝记录',
+      workspacePromptTitle: '当前工作区',
+      workspacePromptDescription:
+        '对所有工作目录落在这个工作区之下的会话生效。',
+      workspacePromptPlaceholder:
+        '例如：本仓库是 DSH 插件，改完必须跑 `node scripts/selftest.mjs`。',
+      workspaceNoMatch:
+        '当前会话目录还没有匹配的工作区档。在下面保存会新建一个。',
+      pickWorkspaceFallback: '从已注册工作区选择…',
+      workspaceNoPromptYet: '该工作区还没有提示词——保存即新建。',
+      sessionPromptTitle: '当前会话',
+      sessionPromptDescription:
+        '排在工作区之后生效，且只作用于这个会话发起的审查请求。',
+      sessionPromptPlaceholder:
+        '例如：本会话允许 `pnpm pack`——我已确认旧 tarball 可以覆盖。',
+      denialsTitle: '被拒绝的记录',
+      denialsDescription:
+        '新的在前。每行是一次被审查器拒绝的调用，理由可以直接喂给上面的提示词。',
+      denialsEmpty: '当前范围内还没有被拒绝的记录。',
+      denialsScope: '范围',
+      denialsAll: '全部',
+      denialsThisSession: '本会话',
+      denialsThisWorkspace: '本工作区',
+      appendAsPrompt: '追加为提示词',
+      appendPrefix: '本会话允许：',
+      refresh: '刷新',
+      scopeSession: '会话',
+      scopeWorkspace: '工作区',
+      autoOnlyHint:
+        '当前会话没有使用 Auto review 预设，审查器并未运行。把会话切到 Auto review 后才能在这里维护它的提示词。',
+      cwdLabel: '目录',
+      sessionDefaultTitle: 'AutoReview 管理',
+      retryChannel: '重试',
+      channelConnecting: '正在连接提示词文件通道…',
+      channelNotReady: '提示词文件通道未就绪，下面的内容无法加载或保存。',
+      channelLoadingData: '正在加载本会话的提示词与拒绝记录…',
     }
 
     // ── 样式（只用主题 token）───────────────────────────────────────────
@@ -268,6 +400,54 @@ window.__ModuleLoader__.load({
 .arc-banner-mark { font-weight: 700; }
 .arc-path-row { display: flex; gap: 8px; align-items: center; }
 .arc-path-row > .arc-input { flex: 1 1 auto; min-width: 0; }
+/* ── 会话页签（右栏 tab）────────────────────────────────────────────── */
+.arc-tab {
+  display: flex; flex-direction: column; gap: 10px;
+  height: 100%; min-height: 0; overflow-y: auto;
+  padding: 12px 14px 16px; box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+}
+.arc-tab-head { display: flex; flex-direction: column; gap: 2px; }
+.arc-tab-title { font-size: 14px; line-height: 20px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.arc-tab-desc { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.arc-tab-section { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.arc-tab-subtitle {
+  font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-secondary);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.arc-tab textarea.arc-textarea { min-height: 110px; font-size: 12px; line-height: 18px; }
+.arc-tab-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.arc-select {
+  font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 5px;
+  color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+}
+.arc-denial-list { display: flex; flex-direction: column; gap: 6px; }
+.arc-denial {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 10px; border-radius: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.arc-denial-top { display: flex; align-items: center; gap: 8px; }
+.arc-denial-kind {
+  font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+  color: var(--dsw-alias-bg-base); background: var(--dsw-alias-state-error-primary);
+}
+.arc-denial-kind[data-kind="ask"] { background: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-idle-primary)); }
+.arc-denial-kind[data-kind="fail"] { background: var(--dsw-alias-label-secondary); }
+.arc-denial-meta { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.arc-denial-reason {
+  font-size: 12px; line-height: 17px; color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap; word-break: break-word;
+}
+.arc-denial-arg {
+  font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all; opacity: .9;
+}
+.arc-denial-actions { display: flex; gap: 6px; }
+.arc-btn-sm { font-size: 11px; padding: 3px 9px; }
 `
 
     /** 可访问开关。 */
@@ -531,12 +711,37 @@ window.__ModuleLoader__.load({
         return accepted
       }
 
+      /**
+       * 开关 → 配置字段的取值映射。
+       *
+       * ⚠️ 开关组件（`Switch`/`ToggleRow`）只产出**布尔值**，但 Config schema 里
+       * 的字段类型并不全是布尔：`defaultPreset` 是 `'auto' | 'off'` 字符串联合
+       * （见 `lib/schema.js`）。把 `true/false` 原样透传会直接被宿主 schema 拒绝：
+       *
+       * ```
+       * ValidationError: invalid config:
+       *   - $.defaultPreset expected "auto" | "off" but got true
+       * ```
+       *
+       * 表现就是「点开关 = 保存失败」，而且不崩溃、只在下次读取时看出没落盘。
+       * 所以**每个非布尔字段都必须在这里登记**，不允许靠调用点各自转换。
+       */
+      const BOOLEAN_FIELD_VALUES = Object.freeze({
+        defaultPreset: { on: 'auto', off: 'off' },
+      })
+
+      /** 把开关的布尔值转成该字段 schema 要求的取值；布尔字段原样返回。 */
+      const fieldValue = (field, next) => {
+        const mapping = BOOLEAN_FIELD_VALUES[field]
+        return mapping === undefined ? next : next ? mapping.on : mapping.off
+      }
+
       const toggle = (field) => async (next) => {
         const seq = (seqRef.current += 1)
         setNotice(null)
         let accepted = false
         try {
-          accepted = (await setField(field, next)) === true
+          accepted = (await setField(field, fieldValue(field, next))) === true
         } catch (_error) {
           accepted = false
         }
@@ -789,6 +994,547 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // 会话页签（右栏 sidebar.right.pane.tab，0.2.0 新增）
+    // ════════════════════════════════════════════════════════════════════
+
+    /** 页签类型 id —— 必须是稳定的包级标识（同 kind 只能有一个 extension）。 */
+    const SESSION_TAB_ID = 'dsh-auto-review-custom/session-prompt'
+
+    /** 页签 kind —— `ctx.sidebarRight.openTab(kind)` 用它打开。 */
+    const SESSION_TAB_KIND = 'auto-review-session-prompt'
+
+    /**
+     * AutoReview 管理页签的正文组件。
+     *
+     * ## 它解决什么
+     *
+     * 0.1.x 里想给"就这一次会话"调口径，只能去改工作区档——那会影响同一工作区
+     * 的**所有**会话。这个页签把**两档提示词 + 两档拒绝记录**摆在会话自己旁边。
+     *
+     * ## sessionId 与 cwd 从哪来
+     *
+     * `sidebar.right.pane.tab` 是 `scope: 'session'` 的槽位，框架给
+     * `SessionStandardProps`：`sessionId` 直接用；cwd 由 Host 按 sessionId 反查
+     * （`ctx.remote.autoReviewPrompts.readSessionContext`），**不在浏览器侧猜**。
+     *
+     * ## auto 预设门禁
+     *
+     * 用户只在 Auto review 预设下才需要维护这些提示词。`useProjection('permissions')`
+     * 给出 `{ currentValue }`（见 `dsh-permission-presets` 的 `PermissionSelection`），
+     * 不是 `auto` 就显示说明并禁用编辑。
+     *
+     * @param {object} props
+     */
+    function SessionTab(props) {
+      const { sessionId, useProjection, loadPromptApi, t } = props
+
+      /** `null` = 还在挂载通道；`{ api }` / `{ error }`。 */
+      const [channel, setChannel] = React.useState(null)
+      const [workspace, setWorkspace] = React.useState({ name: null, path: null, prompt: '' })
+      const [registeredWorkspaces, setRegisteredWorkspaces] = React.useState([])
+      const [sessionDraft, setSessionDraft] = React.useState('')
+      const [workspaceDraft, setWorkspaceDraft] = React.useState('')
+      const [loaded, setLoaded] = React.useState(false)
+      const [scope, setScope] = React.useState('session')
+      const [denials, setDenials] = React.useState([])
+      const [notice, setNotice] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      /** 通道重试计数：递增即让挂载 effect 重跑（失败不缓存，见 mountPromptRemote）。 */
+      const [mountAttempt, setMountAttempt] = React.useState(0)
+      const seqRef = React.useRef(0)
+
+      // 权限投影：`auto` 才是 Auto review 预设（见 dsh-permission-presets）。
+      const permissions = useProjection('permissions')
+      const preset = typeof permissions?.currentValue === 'string' ? permissions.currentValue : null
+      const autoEnabled = preset === null || preset === 'auto'
+
+      const say = (kind) => setNotice({ kind, seq: (seqRef.current += 1) })
+
+      // ── 挂载 Remote 通道（惰性，和设置页共用同一个单例）───────────────
+      React.useEffect(() => {
+        let alive = true
+        Promise.resolve(loadPromptApi())
+          .then((result) => {
+            if (alive) setChannel(result)
+          })
+          .catch((error) => {
+            if (alive) setChannel({ api: null, error: String(error?.message ?? error) })
+          })
+        return () => {
+          alive = false
+        }
+      }, [loadPromptApi, mountAttempt])
+
+      const api = channel === null ? null : channel.api ?? null
+
+      /**
+       * 一次性拉齐：会话上下文（cwd + 命中的工作区档）、两档提示词、拒绝记录。
+       *
+       * 任何一项失败都只提示、不抛：页签可用性不该因为通道抖动而崩溃。
+       */
+      const refresh = React.useCallback(async () => {
+        if (api === null) return
+        setBusy(true)
+        try {
+          // ⚠️ 每个 Remote 调用都必须 `unwrapRemote` 拆信封！
+          //
+          // 网关**总是**返回 `{ok:true, value}` / `{ok:false, error}`（本文件
+          // 「三个必须知道的坑」第 2 条）。不拆包时 `context.cwd` 恒为
+          // `undefined`，于是「目录」显示 `—`、两档提示词读成空、拒绝记录读成
+          // 空、兜底下拉也读成空——**看起来就像通道没通或没有数据**，而且不抛错。
+          // 设置页之所以一直正常，就是因为它每个调用都拆了包。
+          const context = unwrapRemote(await api.readSessionContext(sessionId))
+          if (context === null) {
+            say('failed')
+            return
+          }
+          const cwd = typeof context?.cwd === 'string' ? context.cwd : null
+          const matched = context?.workspace ?? null
+
+          const [workspacePromptResult, sessionPromptResult, denialResult, registered] = await Promise.all([
+            matched === null ? Promise.resolve({ prompt: '' }) : api.readWorkspacePrompt(matched.path).then(unwrapRemote),
+            api.readSession(sessionId).then(unwrapRemote),
+            api
+              .queryDenials(
+                scope === 'session'
+                  ? { sessionId, limit: 30 }
+                  : cwd === null
+                    ? { limit: 30 }
+                    : { cwd, limit: 30 },
+              )
+              .then(unwrapRemote),
+            // 兜底候选：cwd 反查失败时让人从已注册工作区里挑，避免彻底死锁。
+            api.listWorkspaces().then(unwrapRemote).catch(() => []),
+          ])
+
+          setRegisteredWorkspaces(Array.isArray(registered) ? registered : [])
+          setWorkspace({
+            name: matched === null ? null : matched.name,
+            path: matched === null ? cwd : matched.path,
+            prompt: workspacePromptResult?.prompt ?? '',
+          })
+          setWorkspaceDraft(workspacePromptResult?.prompt ?? '')
+          setSessionDraft(sessionPromptResult?.prompt ?? '')
+          setLoaded(true)
+          setDenials(Array.isArray(denialResult?.items) ? denialResult.items : [])
+        } catch (_error) {
+          say('failed')
+        } finally {
+          setBusy(false)
+        }
+      }, [api, sessionId, scope])
+
+      /**
+       * 手动指定工作区路径（cwd 反查失败时的兜底）。
+       *
+       * 只把路径填进 `workspace`，并立刻读该路径已有的提示词——这样即使会话
+       * cwd 拿不到，用户仍能编辑"某个工作区"的档，而不是对着灰框无路可走。
+       */
+      const pickWorkspacePath = async (path) => {
+        if (api === null) return
+        const chosen = String(path ?? '').trim()
+        if (chosen === '') return
+        setBusy(true)
+        try {
+          const result = unwrapRemote(await api.readWorkspacePrompt(chosen))
+          setWorkspace({ name: result?.name ?? null, path: chosen, prompt: result?.prompt ?? '' })
+          setWorkspaceDraft(result?.prompt ?? '')
+          setLoaded(true)
+        } catch (_error) {
+          say('failed')
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      /**
+       * 触发加载：**依赖原始值，不依赖 `refresh` 的函数引用**。
+       *
+       * ## 为什么不用 `useEffect(() => void refresh(), [refresh])`
+       *
+       * `refresh` 是 `useCallback([api, sessionId, scope])`，它的引用由 React
+       * 的比较决定；而 `api` 又是从 `channel` 派生的对象。这条"引用链"一旦在
+       * 某个时序上没变化（例如通道先 resolve、effect 已用旧 `refresh` 跑过一次，
+       * 而那次 `api` 仍是 `null` 直接早退），就会**漏掉本该发生的那次加载**——
+       * 表现为“页签打开是空的，手动切换 scope 才读出内容”（切换会改 `scope`，
+       * 从而撞对一次重跑）。
+       *
+       * 改成依赖 `[api, sessionId, scope]` 这些**原始值**，通过 ref 调最新实现：
+       * 通道一就绪、会话一变化、scope 一切换，都必然跑一次，不依赖引用比较的时机。
+       */
+      const refreshRef = React.useRef(refresh)
+      refreshRef.current = refresh
+      React.useEffect(() => {
+        if (api === null) return
+        void refreshRef.current()
+      }, [api, sessionId, scope])
+
+      /**
+       * 判一个写操作的信封是否成功。
+       *
+       * 外层 `ok` 表示"调用到达了 Host"，内层 `value.ok` 才是"文件真的写了"。
+       * 两层都要看——只看外层会把"Host 报错但调用成功"当成保存成功。
+       */
+      const writeAccepted = (envelope) => {
+        const value = unwrapRemote(envelope)
+        if (value === null) return false
+        return value?.ok !== false
+      }
+
+      /** 保存会话档。空串等于删除该档（与设置页一致）。 */
+      const saveSession = async () => {
+        if (api === null) return
+        const seq = (seqRef.current += 1)
+        setNotice(null)
+        setBusy(true)
+        try {
+          const accepted = writeAccepted(await api.writeSession(sessionId, sessionDraft))
+          setNotice({ kind: accepted ? (sessionDraft.trim() === '' ? 'removed' : 'saved') : 'failed', seq })
+        } catch (_error) {
+          setNotice({ kind: 'failed', seq })
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      /** 保存工作区档。没有匹配路径时按钮不可用（不能凭空建一个无主的档）。 */
+      const saveWorkspace = async () => {
+        if (api === null || workspace.path === null) return
+        const seq = (seqRef.current += 1)
+        setNotice(null)
+        setBusy(true)
+        try {
+          const accepted = writeAccepted(await api.writeWorkspace(workspace.path, workspaceDraft))
+          setNotice({ kind: accepted ? (workspaceDraft.trim() === '' ? 'removed' : 'saved') : 'failed', seq })
+          if (accepted) await refresh()
+        } catch (_error) {
+          setNotice({ kind: 'failed', seq })
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      /**
+       * 把一条拒绝理由追加成提示词草稿。
+       *
+       * 刻意**不**直接保存：审查理由原文是"为什么拒绝"，不是"允许什么"。
+       * 直接落盘会把禁止性描述当成授权提示词，反而可能误导审查器。
+       * 所以只把骨架填进草稿，由用户改成正向表述后再保存。
+       *
+       * 目标框跟随当前 `scope`：看本会话记录时追加到会话档，
+       * 看本工作区记录时追加到工作区档——避免"看着 A 却改到 B"。
+       */
+      const appendDenial = (item) => {
+        const reason = typeof item.reason === 'string' ? item.reason.replace(/^Auto review (denied|of) tool[^:]*:\s*/i, '') : ''
+        const tool = item.tool ?? 'tool'
+        const line = `${t('appendPrefix')}${tool} 可以执行这类操作 —— 依据：${reason}`
+        const apply = (previous) => (previous.trim() === '' ? line : `${previous.trim()}\n${line}`)
+        if (scope === 'workspace') setWorkspaceDraft(apply)
+        else setSessionDraft(apply)
+      }
+
+      if (channel !== null && channel.error !== null) {
+        return h(
+          'div',
+          { className: 'arc-tab' },
+          h('div', { className: 'arc-tab-title' }, t('tabTitle')),
+          h('div', { className: 'arc-hint', style: { color: 'var(--dsw-alias-state-error-primary)' } }, channel.error),
+          h(
+            'div',
+            { className: 'arc-tab-toolbar' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'arc-btn',
+                onClick: () => {
+                  // 失败不缓存（见 mountPromptRemote）；递增计数让挂载 effect 重跑。
+                  setChannel(null)
+                  setLoaded(false)
+                  setMountAttempt((n) => n + 1)
+                },
+              },
+              t('retryChannel'),
+            ),
+          ),
+        )
+      }
+
+      const disabled = api === null || !loaded || !autoEnabled
+
+      return h(
+        'div',
+        { className: 'arc-tab' },
+        h(
+          'div',
+          { className: 'arc-tab-head' },
+          h('div', { className: 'arc-tab-title' }, t('tabTitle')),
+          h(
+            'div',
+            { className: 'arc-tab-desc' },
+            `${t('cwdLabel')}: ${workspace.path ?? '—'}${preset === null ? '' : ` · ${preset}`}`,
+          ),
+        ),
+
+        // 通道状态：必须**明确可见**，否则"未就绪"和"没有数据"在界面上无法区分
+        // （2026-10-25 那次排查就卡在这里）。
+        channel === null
+          ? h('div', { className: 'arc-hint' }, t('channelConnecting'))
+          : api === null
+            ? h('div', { className: 'arc-hint' }, t('channelNotReady'))
+            : loaded
+              ? null
+              : h('div', { className: 'arc-hint' }, t('channelLoadingData')),
+
+        // 非 auto 预设：明确说明审查器没在跑，而不是让人对着灰框猜。
+        autoEnabled
+          ? null
+          : h('div', { className: 'arc-hint', style: { color: 'var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary))' } }, t('autoOnlyHint')),
+
+        notice !== null
+          ? h(
+              'div',
+              {
+                className: 'arc-banner',
+                role: 'status',
+                'data-tone': notice.kind === 'failed' ? 'error' : 'success',
+                key: notice.seq,
+              },
+              h('span', { className: 'arc-banner-mark' }, notice.kind === 'failed' ? '✕' : '✓'),
+              h('span', null, t(notice.kind)),
+            )
+          : null,
+
+        // ── 当前工作区提示词 ────────────────────────────────────────────
+        h(
+          'div',
+          { className: 'arc-tab-section' },
+          h(
+            'div',
+            { className: 'arc-tab-subtitle' },
+            h('span', null, t('workspacePromptTitle')),
+            h('span', { className: 'arc-denial-meta' }, workspace.path ?? '—'),
+          ),
+          h('div', { className: 'arc-tab-desc' }, t('workspacePromptDescription')),
+          // cwd 反查不到时给出**可操作**的兜底，而不是只显示一句“无匹配”把人堵死。
+          workspace.path === null
+            ? h(
+                'div',
+                { className: 'arc-tab-section' },
+                h('div', { className: 'arc-hint' }, t('workspaceNoMatch')),
+                registeredWorkspaces.length > 0
+                  ? h(
+                      'select',
+                      {
+                        className: 'arc-select',
+                        value: '',
+                        disabled: api === null || busy,
+                        onChange: (event) => {
+                          if (event.target.value !== '') void pickWorkspacePath(event.target.value)
+                        },
+                      },
+                      h('option', { value: '' }, t('pickWorkspaceFallback')),
+                      ...registeredWorkspaces.map((entry) =>
+                        h(
+                          'option',
+                          { key: entry.id || entry.path, value: entry.path },
+                          entry.title === '' ? entry.path : `${entry.title} — ${entry.path}`,
+                        ),
+                      ),
+                    )
+                  : null,
+              )
+            : h(
+                'div',
+                { className: 'arc-hint' },
+                workspace.name === null ? t('workspaceNoPromptYet') : `${t('scopeWorkspace')}: ${workspace.name}`,
+              ),
+          h('textarea', {
+            className: 'arc-textarea',
+            value: workspaceDraft,
+            disabled: disabled || busy || workspace.path === null,
+            placeholder: t('workspacePromptPlaceholder'),
+            onChange: (event) => setWorkspaceDraft(event.target.value),
+          }),
+          h(
+            'div',
+            { className: 'arc-tab-toolbar' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'arc-btn arc-btn-primary',
+                disabled: disabled || workspace.path === null,
+                onClick: saveWorkspace,
+              },
+              t('save'),
+            ),
+          ),
+        ),
+
+        // ── 当前会话提示词 ──────────────────────────────────────────────
+        h(
+          'div',
+          { className: 'arc-tab-section' },
+          h(
+            'div',
+            { className: 'arc-tab-subtitle' },
+            h('span', null, t('sessionPromptTitle')),
+            h('span', { className: 'arc-denial-meta' }, sessionId),
+          ),
+          h('div', { className: 'arc-tab-desc' }, t('sessionPromptDescription')),
+          h('textarea', {
+            className: 'arc-textarea',
+            value: sessionDraft,
+            disabled: disabled || busy,
+            placeholder: t('sessionPromptPlaceholder'),
+            onChange: (event) => setSessionDraft(event.target.value),
+          }),
+          h(
+            'div',
+            { className: 'arc-tab-toolbar' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'arc-btn arc-btn-primary',
+                disabled,
+                onClick: saveSession,
+              },
+              t('save'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'arc-btn',
+                disabled: api === null,
+                onClick: () => void refresh(),
+              },
+              t('refresh'),
+            ),
+          ),
+        ),
+
+        // ── 拒绝记录（本会话 / 本工作区 / 全部）─────────────────────────
+        h(
+          'div',
+          { className: 'arc-tab-section' },
+          h(
+            'div',
+            { className: 'arc-tab-subtitle' },
+            h('span', null, t('denialsTitle')),
+            h(
+              'select',
+              {
+                className: 'arc-select',
+                value: scope,
+                onChange: (event) => setScope(event.target.value),
+              },
+              h('option', { value: 'session' }, t('denialsThisSession')),
+              h('option', { value: 'workspace' }, t('denialsThisWorkspace')),
+              h('option', { value: 'all' }, t('denialsAll')),
+            ),
+          ),
+          h('div', { className: 'arc-tab-desc' }, t('denialsDescription')),
+
+          denials.length === 0
+            ? h('div', { className: 'arc-hint' }, t('denialsEmpty'))
+            : h(
+                'div',
+                { className: 'arc-denial-list' },
+                ...denials.map((item, index) =>
+                  h(
+                    'div',
+                    { className: 'arc-denial', key: `${item.t ?? ''}-${index}` },
+                    h(
+                      'div',
+                      { className: 'arc-denial-top' },
+                      h(
+                        'span',
+                        { className: 'arc-denial-kind', 'data-kind': item.kind ?? 'deny' },
+                        item.kind ?? 'deny',
+                      ),
+                      h('span', { className: 'arc-denial-meta' }, `${item.tool ?? '?'} · ${formatTime(item.t)}`),
+                    ),
+                    h('div', { className: 'arc-denial-reason' }, String(item.reason ?? '')),
+                    item.arg ? h('div', { className: 'arc-denial-arg' }, String(item.arg)) : null,
+                    h(
+                      'div',
+                      { className: 'arc-denial-actions' },
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'arc-btn arc-btn-sm',
+                          disabled,
+                          onClick: () => appendDenial(item),
+                        },
+                        t('appendAsPrompt'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+        ),
+
+        h('div', { className: 'arc-hint' }, t('constraintNote')),
+      )
+    }
+
+    /** ISO 时间压成 `HH:mm`；解析不了就原样返回。 */
+    function formatTime(value) {
+      if (typeof value !== 'string') return '?'
+      const at = Date.parse(value)
+      if (!Number.isFinite(at)) return value
+      const date = new Date(at)
+      const pad = (n) => String(n).padStart(2, '0')
+      return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+    }
+
+    /** 页签标题（chip 上显示的字）。 */
+    function SessionTabTitle(props) {
+      const { t } = props
+      return h('span', null, t('tabTitle'))
+    }
+
+    /**
+     * 会话标题旁的入口按钮。
+     *
+     * ## 只在 Auto review 预设下出现
+     *
+     * 这个页签的全部内容（审查提示词、拒绝记录）只有在审查器真的在跑时才有意义。
+     * `useProjection('permissions')` 给出 `{ currentValue }`；不是 `auto` 就返回
+     * `null`，按钮整个不渲染——比"渲染出来但点了没用"干净。
+     *
+     * 投影还没到达时（`undefined`）**按可见处理**：宿主可能在会话刚建好时短暂
+     * 没有该帧，此时隐藏会让按钮闪一下。宁可短暂多显示，也不要闪烁。
+     *
+     * 样式刻意贴宿主的小按钮规格（`arc-btn-sm`），不要在这加图标依赖：
+     * 客户端半区不能 import `@deepseek-ai/dsh-client-ui-primitives`。
+     *
+     * @param {object} props
+     */
+    function SessionHeaderAction(props) {
+      const { t, openSessionTab, useProjection } = props
+
+      const permissions = useProjection('permissions')
+      const preset = typeof permissions?.currentValue === 'string' ? permissions.currentValue : null
+      if (preset !== null && preset !== 'auto') return null
+
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'arc-btn arc-btn-sm',
+          title: t('tabGuideDescription'),
+          onClick: () => openSessionTab(),
+        },
+        t('tabTitle'),
+      )
+    }
+
     /**
      * **惰性**挂载 Remote 通道（同一个会话只挂一次）。
      *
@@ -825,26 +1571,57 @@ window.__ModuleLoader__.load({
         if (remote === undefined || typeof remote?.$mount !== 'function') {
           return { api: null, error: 'ctx.remote.$mount 不可用（宿主没有 Remote 网关）' }
         }
-        try {
-          const disposer = await remote.$mount(TYPERT_REMOTE)
-          ctx.effect(() => disposer, 'auto-review-custom remote')
-        } catch (error) {
-          return { api: null, error: `$mount 失败：${String(error?.message ?? error)}` }
+
+        // ⚠️ 超时保护：`$mount` 走 gateway 的全局串行 mutation 队列，历史上有过
+        // 挂起不 settle 的情况（队列被启动期的内置命名空间占住）。不设超时的话，
+        // 页签会永远停在"未就绪"，而且**看起来像数据为空**——这正是 2026-10-25
+        // 那次"目录显示 —、输入框全灰"的排查盲区。超时后给出明确错误，可重试。
+        let timer = null
+        const timeout = new Promise((resolve) => {
+          timer = setTimeout(
+            () => resolve({ api: null, error: `$mount 超时（${MOUNT_TIMEOUT_MS}ms 未返回）——Remote 网关队列可能被占用，重新打开页签可重试` }),
+            MOUNT_TIMEOUT_MS,
+          )
+        })
+
+        const mountTask = (async () => {
+          try {
+            const disposer = await remote.$mount(TYPERT_REMOTE)
+            ctx.effect(() => disposer, 'auto-review-custom remote')
+          } catch (error) {
+            return { api: null, error: `$mount 失败：${String(error?.message ?? error)}` }
+          }
+          const face =
+            ctx.get?.(`remote.${REMOTE_NAMESPACE}`) ??
+            ctx.remote?.[REMOTE_NAMESPACE] ??
+            null
+          if (face === null) {
+            return { api: null, error: `已挂载但 remote.${REMOTE_NAMESPACE} 未出现` }
+          }
+          return { api: face, error: null }
+        })()
+
+        const settled = await Promise.race([mountTask, timeout])
+        if (timer !== null) clearTimeout(timer)
+        if (settled.api === null) {
+          // 失败/超时**不要**缓存：下次打开页签还能重试，否则一次抖动永久坏掉。
+          promptMount = null
         }
-        const face =
-          ctx.get?.(`remote.${REMOTE_NAMESPACE}`) ??
-          ctx.remote?.[REMOTE_NAMESPACE] ??
-          null
-        if (face === null) {
-          return { api: null, error: `已挂载但 remote.${REMOTE_NAMESPACE} 未出现` }
-        }
-        return { api: face, error: null }
+        return settled
       })()
 
       return promptMount
     }
 
     return {
+      /**
+       * 顶层依赖 —— **只列必需且普遍存在的服务**。
+       *
+       * ⚠️ 绝对不要把 `sidebarRightTabs` / `sidebarRight` 放进来：
+       * cordis 的注入是强制的，顶层 inject 里有一个缺失服务，整个插件 fiber
+       * 判 INACTIVE、`apply` 一行不跑（实测见下方子插件注释）。右栏只在部分
+       * 构建里存在，放这里会让**设置页**跟着一起消失。
+       */
       inject: ['slots', 'locale', 'configForms'],
 
       apply(ctx) {
@@ -857,6 +1634,16 @@ window.__ModuleLoader__.load({
         }, 'auto-review-custom styles')
 
         ctx.effect(() => ctx.locale.register(LOCALE_NS, { en, zh }), 'auto-review-custom locale')
+
+        /**
+         * 本地化取词器。
+         *
+         * `ctx.locale.bind(ns)` 返回的函数会跟随当前语言；页签类型里的
+         * `title` / `guide[].title` 是**每次用到时重新调用**的 thunk，
+         * 所以把它们绑到同一个取词器上，切换语言不需要重新注册。
+         */
+        const t = ctx.locale.bind(LOCALE_NS)
+        const localeRef = { t: (key) => t(key) }
 
         // 表单归属方是 Host 插件的 loader entry id，不是包名。
         const form = ctx.configForms.get(ENTRY_ID)
@@ -899,6 +1686,115 @@ window.__ModuleLoader__.load({
             ),
           'auto-review-custom settings page',
         )
+
+        // ── 会话页签（右栏）：注册成一个**显式命名的子插件** ───────────
+        //
+        // ## 依赖隔离（必须如此）
+        //
+        // `sidebarRightTabs` / `sidebarRight` 只在装了右栏的构建里存在，属**可选**。
+        // 而 cordis 的注入是**强制**语义：顶层 `inject` 里列了缺失的服务，整个插件
+        // fiber 直接判 INACTIVE，`apply` 一行都不跑。实测：
+        //
+        //   inject:['slots']                    + slots 存在  → 应用了
+        //   inject:['slots','sidebarRightTabs'] + 后者缺失    → 未应用（整插件不跑）
+        //
+        // 所以这两个服务**绝不能**写进本插件顶层 `inject`（否则没右栏的构建里
+        // 设置页会跟着消失），只能交给子插件声明：子插件缺依赖只让自己不激活，
+        // 父插件的设置页照常工作；右栏服务晚到（热重载/延迟挂载）时 cordis 会自动
+        // 把子插件拉起来。
+        //
+        // 用 `ctx.plugin({name,...})` 而非 `ctx.inject([...], cb)`：两者语义等价
+        // （`ctx.inject` 内部就是 `plugin({inject,apply})`），但前者能给子插件一个
+        // **可读名字**，cordis 的 fiber 诊断里能直接看出这是本插件的哪一部分。
+        //
+        // 两阶段注册，缺一不可（`ui-sidebar-right/README.md`「Extension seats」）：
+        //   1. `sidebarRightTabs.register` 声明这个类型**是什么**；
+        //   2. `slots.register('sidebar.right.pane.tab', { key: id })` 提供**正文**，
+        //      以及可选的 `sidebar.right.pane.tab.title` 提供 chip 上的活标题。
+        ctx.plugin({
+          name: 'auto-review-custom/right-tab',
+          inject: ['slots', 'sidebarRightTabs', 'sidebarRight'],
+          apply(tabsCtx) {
+            /** 打开页签：右栏会自己展开（"content the user cannot see is not opened"）。 */
+            const openSessionTab = () => {
+              try {
+                tabsCtx.sidebarRight.openTab(SESSION_TAB_KIND, { revealIfOpened: true })
+              } catch (error) {
+                console?.warn?.(`[auto-review-custom] 打开会话页签失败：${String(error?.message ?? error)}`)
+              }
+            }
+
+            tabsCtx.effect(
+              () =>
+                tabsCtx.sidebarRightTabs.register({
+                  id: SESSION_TAB_ID,
+                  kind: SESSION_TAB_KIND,
+                  priority: 'extension',
+                  // 标题在开页签时捕获一次；活标题由下面的 title 注册提供。
+                  title: () => localeRef.t('sessionDefaultTitle'),
+                  guide: [
+                    {
+                      id: 'open',
+                      order: 10,
+                      title: () => localeRef.t('tabGuideTitle'),
+                      description: () => localeRef.t('tabGuideDescription'),
+                    },
+                  ],
+                }),
+              'auto-review-custom session tab type',
+            )
+
+            tabsCtx.effect(
+              () =>
+                tabsCtx.slots.inject('sidebar.right.pane.tab', () =>
+                  tabsCtx.slots.register(
+                    {
+                      name: 'sidebar.right.pane.tab',
+                      key: SESSION_TAB_ID,
+                      locale: LOCALE_NS,
+                      inject: () => ({ loadPromptApi: () => mountPromptRemote(ctx) }),
+                    },
+                    SessionTab,
+                  ),
+                ),
+              'auto-review-custom session tab body',
+            )
+
+            tabsCtx.effect(
+              () =>
+                tabsCtx.slots.inject('sidebar.right.pane.tab.title', () =>
+                  tabsCtx.slots.register(
+                    { name: 'sidebar.right.pane.tab.title', key: SESSION_TAB_ID, locale: LOCALE_NS },
+                    SessionTabTitle,
+                  ),
+                ),
+              'auto-review-custom session tab title',
+            )
+
+            // ── 打开入口：会话标题旁的一个按钮 ────────────────────────
+            //
+            // 只靠右栏的 guide 卡片入口不够显眼（用户得先展开右栏、再找指南页）。
+            // `conversation.session.header.actions` 是会话标题旁的加分位，
+            // 点一下直接 `openTab(kind)`——右栏会自己展开。
+            tabsCtx.effect(
+              () =>
+                tabsCtx.slots.inject('conversation.session.header.actions', () =>
+                  tabsCtx.slots.register(
+                    {
+                      name: 'conversation.session.header.actions',
+                      id: 'auto-review-custom.session-prompt',
+                      order: 60,
+                      label: () => localeRef.t('tabTitle'),
+                      locale: LOCALE_NS,
+                      inject: () => ({ openSessionTab }),
+                    },
+                    SessionHeaderAction,
+                  ),
+                ),
+              'auto-review-custom session header action',
+            )
+          },
+        })
       },
     }
   },

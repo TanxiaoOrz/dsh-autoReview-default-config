@@ -1,7 +1,7 @@
 {
   "name": "dsh-auto-review-custom",
-  "version": "0.1.0",
-  "description": "Auto review 增强：新会话默认进入 auto 权限预设 + 两档审查提示词（全局/工作区）+ 文件类工具静态放行",
+  "version": "0.2.0",
+  "description": "Auto review 增强：新会话默认进入 auto 权限预设 + 三档审查提示词（全局/工作区/会话）+ 拒绝记录 + 文件类工具静态放行",
   "type": "module",
   "main": "lib/index.js",
   "bin": {
@@ -42,11 +42,11 @@
     "node": ">=22"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-permission-presets": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-workspace": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-permission-presets": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-session": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-workspace": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/schemastery": "*",
     "zod": "*"
   },
@@ -67,7 +67,8 @@
       "platform": "web",
       "immediately": true,
       "inject": [
-        "@deepseek-ai/dsh-client-ui-settings"
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ]
     }
   }
