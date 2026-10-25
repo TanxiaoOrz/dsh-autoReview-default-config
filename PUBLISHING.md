@@ -89,7 +89,7 @@ dsh plugin --profile web add dsh-auto-review-custom
 #### 方式 D：从 GitHub 装（不发 npm 也能分享）
 
 ```powershell
-dsh plugin --profile web add "github:你的账号/AutoReviewCustom"
+dsh plugin --profile web add "github:TanxiaoOrz/dsh-autoReview-default-config"
 ```
 
 > ⚠️ git 托管的包安装时要跑 `prepare` 构建脚本，pnpm 默认拦截。
@@ -448,9 +448,9 @@ DSH **没有**独立的插件市场服务器。我读过 `dsh-plugin-manager` �
 |---|---|
 | npm 包名 | `dsh plugin --profile web add dsh-auto-review-custom` |
 | 带版本 | `dsh plugin --profile web add dsh-auto-review-custom@0.1.1` |
-| GitHub 简写 | `dsh plugin --profile web add "github:你的账号/AutoReviewCustom"` |
-| Git URL | `dsh plugin --profile web add "https://github.com/你的账号/AutoReviewCustom"` |
-| Git SSH | `dsh plugin --profile web add "git@github.com:你的账号/AutoReviewCustom.git"` |
+| GitHub 简写 | `dsh plugin --profile web add "github:TanxiaoOrz/dsh-autoReview-default-config"` |
+| Git URL | `dsh plugin --profile web add "https://github.com/TanxiaoOrz/dsh-autoReview-default-config"` |
+| Git SSH | `dsh plugin --profile web add "git@github.com:TanxiaoOrz/dsh-autoReview-default-config.git"` |
 | tgz（本地） | `dsh plugin --profile web add "file:D:/path/xxx.tgz"` |
 | tgz（远程） | `dsh plugin --profile web add "https://.../xxx.tgz"` |
 

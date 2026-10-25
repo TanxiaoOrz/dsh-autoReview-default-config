@@ -106,9 +106,9 @@ node -e "const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('package
 
 首次推到 GitHub 时补两件事：
 
-1. 把 `package.json` 的 `repository` 字段填成你的仓库地址（npm 页面会据此显示源码链接）：
+1. `package.json` 的 `repository` 字段已指向本仓库（npm 页面会据此显示源码链接）：
    ```json
-   "repository": { "type": "git", "url": "https://github.com/<你的账号>/AutoReviewCustom.git" }
+   "repository": { "type": "git", "url": "https://github.com/TanxiaoOrz/dsh-autoReview-default-config.git" }
    ```
 2. 仓库根目录已带 `LICENSE`（MIT，与 `package.json` 的 `"license": "MIT"` 一致），
    GitHub 会自动识别并在仓库页显示；`npm pack` 也会自动把它并入包里。
@@ -116,7 +116,7 @@ node -e "const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('package
 别人从 GitHub 直接装（不需要先发 npm）：
 
 ```bash
-dsh plugin --profile web add "github:<你的账号>/AutoReviewCustom"
+dsh plugin --profile web add "github:TanxiaoOrz/dsh-autoReview-default-config"
 ```
 
 > 本包**没有构建步骤**，从 git 安装不会触发 pnpm 的构建脚本拦截。
