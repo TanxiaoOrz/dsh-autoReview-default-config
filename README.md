@@ -89,7 +89,7 @@ node -e "const fs=require('node:fs');const p=JSON.parse(fs.readFileSync('package
 
 | 范围 | 由谁决定 | 包含 |
 |---|---|---|
-| **npm 包内容**（`npm pack` / `npm publish`） | `package.json` 的 `files` 白名单 | 18 个文件：`lib/`、`client.js`、`bin/`、`cordis.patch.yml`、`LICENSE`（npm 自动并入）、三份 `.md`、`package.json` |
+| **npm 包内容**（`npm pack` / `npm publish`） | `package.json` 的 `files` 白名单 | 21 个文件：`lib/`(13)、`client.js`、`bin/`、`cordis.patch.yml`、`LICENSE`（npm 自动并入）、三份 `.md`、`package.json` |
 | **GitHub 仓库内容** | `.gitignore`（黑名单） | 上面全部 **+** `scripts/`（测试）**+** `LICENSE`、`.gitignore`、`.gitattributes`、`RELEASE-PLAN.md` |
 
 也就是说：**`scripts/` 和 `RELEASE-PLAN.md` 故意不进 npm 包**（测试要工作区的
@@ -452,6 +452,27 @@ node bin/manage.mjs denials --contains 凭据            # 关键字
 > 正向表述后再点保存。追加的目标框跟随 scope：看本会话记录时进会话档，
 > 看本工作区记录时进工作区档——避免"看着 A 却改到 B"。
 
+### 拒绝记录的排版（0.2.1 修了什么）
+
+0.2.0 的记录一多就会"叠字"：长理由溢出自己的卡片，压到下一张卡片上，
+`ask` 标签还是个看不见字的淡色块。两个独立原因：
+
+| 症状 | 根因 | 修法（0.2.1） |
+|---|---|---|
+| 卡片文字越界、与下一张重叠 | 页签是**定高 + `overflow-y:auto`** 的 flex 列，flex 子项默认 `flex-shrink:1`——内容超高时浏览器**先压扁卡片**而不是让它滚动，卡片高度小于内容高度，文字就溢出到卡片外 | tab 子项 / 列表 / 卡片三层都显式 `flex: 0 0 auto`，把"超出就滚动"还回去 |
+| `ask` 标签白字淡底、看不见 | 用了不存在的 token 名 `--dsw-alias-state-warning-primary`（宿主真名是 `state-warn-primary`），写错即回落到淡色 `state-idle-primary` 做底色，而文字色是 `bg-base`（浅色主题下＝白色） | 标签改成**描边 chip**：底色 `bg-layer-2`、文字用状态色，浅/深主题都有对比度 |
+
+顺带把"记录太多"本身也治了（原来是理由+原始命令全展开，一屏放不下两条）：
+
+- 理由折叠到 **4 行**、原始命令折叠到 **2 行**，末行做 alpha 淡出提示"还有下文"，
+  卡片右下角给「展开 / 收起」；只有真的超长才出现该按钮。
+- 头部改成一行三段：`[kind 标签] 工具名（省略号截断）…… 时间`，
+  长 MCP 工具名不会把时间挤出可视区。
+- 展开状态记在页签级 `Set` 里（按 `时间戳-下标`），刷新或切 scope 不会全收起。
+
+> 排版回归由 `scripts/client-structure-test.mjs` 的「拒绝记录排版（0.2.1）」分组锁死
+> （三层 `flex: 0 0 auto`、折叠上限、淡出、token 名），删掉任一条都会变红。
+
 ### 只在 Auto review 预设下出现
 
 这个页签的全部内容只有在审查器真的在跑时才有意义。入口按钮读会话的
@@ -584,7 +605,7 @@ $DSH_HOME/auto-review/
 
 ```bash
 node --check client.js lib/index.js      # 语法检查
-node scripts/client-structure-test.mjs   # 73 项设置页 + 页签结构性检查
+node scripts/client-structure-test.mjs   # 107 项设置页 + 页签结构性检查（含 0.2.1 排版回归）
 node scripts/selftest.mjs                # 40 项纯逻辑自测
 node scripts/prompt-store-test.mjs       # 40 项提示词文件存储
 node scripts/denial-session-test.mjs     # 54 项拒绝记录 + 会话档 + 绑定槽（0.2.0）

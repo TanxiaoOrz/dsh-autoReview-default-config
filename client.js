@@ -233,6 +233,11 @@ window.__ModuleLoader__.load({
       denialsThisWorkspace: 'This workspace',
       appendAsPrompt: 'Append to prompt',
       appendPrefix: 'Allowed here: ',
+      kindDeny: 'denied',
+      kindAsk: 'needs confirmation',
+      kindFail: 'failed',
+      expandDenial: 'Expand',
+      collapseDenial: 'Collapse',
       refresh: 'Refresh',
       scopeSession: 'Session',
       scopeWorkspace: 'Workspace',
@@ -310,6 +315,11 @@ window.__ModuleLoader__.load({
       denialsThisWorkspace: '本工作区',
       appendAsPrompt: '追加为提示词',
       appendPrefix: '本会话允许：',
+      kindDeny: '拒绝',
+      kindAsk: '待确认',
+      kindFail: '失败',
+      expandDenial: '展开',
+      collapseDenial: '收起',
       refresh: '刷新',
       scopeSession: '会话',
       scopeWorkspace: '工作区',
@@ -407,6 +417,11 @@ window.__ModuleLoader__.load({
   padding: 12px 14px 16px; box-sizing: border-box;
   background: var(--dsw-alias-bg-base);
 }
+/*
+ * ⚠️ 定高滚动的 flex 列里，子项默认 flex-shrink:1：内容超高时会被压扁，
+ * 于是"该滚动的"变成"该叠字的"。所有子项禁止压缩，让 overflow-y:auto 生效。
+ */
+.arc-tab > * { flex: 0 0 auto; }
 .arc-tab-head { display: flex; flex-direction: column; gap: 2px; }
 .arc-tab-title { font-size: 14px; line-height: 20px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .arc-tab-desc { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
@@ -422,31 +437,96 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1);
   border: 0.5px solid var(--dsw-alias-border-l2);
 }
-.arc-denial-list { display: flex; flex-direction: column; gap: 6px; }
+/*
+ * 拒绝记录：0.2.0 的排版 bug 与修法（0.2.1）
+ * ────────────────────────────────────────────────────────────────
+ * 症状：记录一多，条目里的长文本就溢出自己的卡片，叠到下一张卡片上，
+ * 看起来像"文字重影"。
+ *
+ * 根因：.arc-tab 是**定高 + overflow-y:auto** 的 flex 列，而 flex 子项默认
+ * flex-shrink:1。内容超出可视高度时，浏览器先把卡片压扁而不是让它滚动，
+ * 卡片高度小于内容高度 → 文字溢出卡片（卡片没设 overflow:hidden）→ 叠字。
+ * 所以下面每一层（tab 子项 / 列表 / 卡片）都显式 flex:0 0 auto，
+ * 让"超出就滚动"重新生效。
+ *
+ * 另一个症状：0.2.0 的 ask 标签用了不存在的 token
+ * --dsw-alias-state-warning-primary（宿主真名是 state-warn-primary），
+ * 名字写错 → 回落到淡色 state-idle-primary 做底色，而文字是 bg-base
+ * （浅色主题下就是白字）→ 白字淡底、看不见。现在改成"描边 chip"：
+ * 底色用 layer-2，文字用状态色，两种主题下都有对比度。
+ */
+.arc-denial-list {
+  display: flex; flex-direction: column; gap: 6px;
+  flex: 0 0 auto;
+}
 .arc-denial {
   display: flex; flex-direction: column; gap: 4px;
+  /* ⚠️ flex: 0 0 auto 是排版修复的**核心**，删了就会重新叠字。 */
+  flex: 0 0 auto; min-width: 0;
   padding: 8px 10px; border-radius: 6px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
 }
-.arc-denial-top { display: flex; align-items: center; gap: 8px; }
+.arc-denial-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .arc-denial-kind {
-  font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
-  color: var(--dsw-alias-bg-base); background: var(--dsw-alias-state-error-primary);
+  flex: none;
+  font-size: 11px; font-weight: 600; line-height: 16px; padding: 0 6px; border-radius: 4px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
 }
-.arc-denial-kind[data-kind="ask"] { background: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-idle-primary)); }
-.arc-denial-kind[data-kind="fail"] { background: var(--dsw-alias-label-secondary); }
+.arc-denial-kind[data-kind="deny"] {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+}
+.arc-denial-kind[data-kind="ask"] {
+  color: var(--dsw-alias-state-warn-label, var(--dsw-alias-state-warn-primary));
+  border-color: currentColor;
+}
+.arc-denial-kind[data-kind="fail"] {
+  color: var(--dsw-alias-label-secondary);
+  border-color: var(--dsw-alias-label-secondary);
+}
+/* 工具名独占剩余宽度并省略号截断：长 MCP 工具名不能把时间挤出可视区。 */
+.arc-denial-tool {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.arc-denial-time { flex: none; font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-caption); }
 .arc-denial-meta { font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .arc-denial-reason {
   font-size: 12px; line-height: 17px; color: var(--dsw-alias-label-primary);
-  white-space: pre-wrap; word-break: break-word;
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+}
+/* 折叠：理由 4 行（17px × 4）、原始命令 2 行（16px × 2）。行高变了一并改这里。
+ * 末行做淡出，明确告诉用户"还有下文"——只叠一层 alpha 渐变，不引入颜色值。 */
+.arc-denial-reason[data-clamp="on"] {
+  max-height: 68px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, currentColor 70%, transparent);
+  mask-image: linear-gradient(to bottom, currentColor 70%, transparent);
 }
 .arc-denial-arg {
   font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  word-break: break-all; opacity: .9;
+  /* 原始命令里全是路径和引号，没有空格可断行，只能 anywhere/break-all。 */
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; opacity: .9;
+}
+.arc-denial-arg[data-clamp="on"] {
+  max-height: 32px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, currentColor 60%, transparent);
+  mask-image: linear-gradient(to bottom, currentColor 60%, transparent);
+}
+.arc-denial-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
 }
 .arc-denial-actions { display: flex; gap: 6px; }
+.arc-btn-link {
+  font: inherit; font-size: 11px; line-height: 16px; padding: 0 2px; cursor: pointer;
+  color: var(--dsw-alias-label-secondary); background: none; border: none;
+}
+.arc-btn-link:hover { color: var(--dsw-alias-label-primary); }
 .arc-btn-sm { font-size: 11px; padding: 3px 9px; }
 `
 
@@ -1038,6 +1118,13 @@ window.__ModuleLoader__.load({
       const [loaded, setLoaded] = React.useState(false)
       const [scope, setScope] = React.useState('session')
       const [denials, setDenials] = React.useState([])
+      /**
+       * 哪些记录处于「展开」状态。
+       *
+       * 放在页签级而不是卡片级：刷新或切 scope 会重建卡片，按 key 记住展开状态
+       * 才不会「一刷新就全收起」。改动时换一个新 Set（React 比较引用）。
+       */
+      const [expandedDenials, setExpandedDenials] = React.useState(() => new Set())
       const [notice, setNotice] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
       /** 通道重试计数：递增即让挂载 effect 重跑（失败不缓存，见 mountPromptRemote）。 */
@@ -1234,6 +1321,16 @@ window.__ModuleLoader__.load({
         else setSessionDraft(apply)
       }
 
+      /** 展开 / 收起一条记录（换新 Set 才能触发重渲染）。 */
+      const toggleDenial = (key) => {
+        setExpandedDenials((previous) => {
+          const next = new Set(previous)
+          if (next.has(key)) next.delete(key)
+          else next.add(key)
+          return next
+        })
+      }
+
       if (channel !== null && channel.error !== null) {
         return h(
           'div',
@@ -1290,7 +1387,7 @@ window.__ModuleLoader__.load({
         // 非 auto 预设：明确说明审查器没在跑，而不是让人对着灰框猜。
         autoEnabled
           ? null
-          : h('div', { className: 'arc-hint', style: { color: 'var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary))' } }, t('autoOnlyHint')),
+          : h('div', { className: 'arc-hint', style: { color: 'var(--dsw-alias-state-warn-label, var(--dsw-alias-label-secondary))' } }, t('autoOnlyHint')),
 
         notice !== null
           ? h(
@@ -1444,38 +1541,18 @@ window.__ModuleLoader__.load({
             : h(
                 'div',
                 { className: 'arc-denial-list' },
-                ...denials.map((item, index) =>
-                  h(
-                    'div',
-                    { className: 'arc-denial', key: `${item.t ?? ''}-${index}` },
-                    h(
-                      'div',
-                      { className: 'arc-denial-top' },
-                      h(
-                        'span',
-                        { className: 'arc-denial-kind', 'data-kind': item.kind ?? 'deny' },
-                        item.kind ?? 'deny',
-                      ),
-                      h('span', { className: 'arc-denial-meta' }, `${item.tool ?? '?'} · ${formatTime(item.t)}`),
-                    ),
-                    h('div', { className: 'arc-denial-reason' }, String(item.reason ?? '')),
-                    item.arg ? h('div', { className: 'arc-denial-arg' }, String(item.arg)) : null,
-                    h(
-                      'div',
-                      { className: 'arc-denial-actions' },
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          className: 'arc-btn arc-btn-sm',
-                          disabled,
-                          onClick: () => appendDenial(item),
-                        },
-                        t('appendAsPrompt'),
-                      ),
-                    ),
-                  ),
-                ),
+                ...denials.map((item, index) => {
+                  const key = denialKey(item, index)
+                  return h(DenialCard, {
+                    key,
+                    item,
+                    t,
+                    disabled,
+                    expanded: expandedDenials.has(key),
+                    onToggle: () => toggleDenial(key),
+                    onAppend: () => appendDenial(item),
+                  })
+                }),
               ),
         ),
 
@@ -1491,6 +1568,98 @@ window.__ModuleLoader__.load({
       const date = new Date(at)
       const pad = (n) => String(n).padStart(2, '0')
       return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+    }
+
+    /**
+     * 拒绝记录的稳定 key。
+     *
+     * 用「时间戳 + 下标」：`t` 是记录写入时刻，同一毫秒内的重复记录极少，
+     * 再用下标兜底避免重复 key 警告。展开状态就挂在这个 key 上。
+     */
+    function denialKey(item, index) {
+      return `${item?.t ?? ''}-${index}`
+    }
+
+    /** kind → 文案 key。未知 kind 原样显示，不吞信息。 */
+    const DENIAL_KIND_KEYS = { deny: 'kindDeny', ask: 'kindAsk', fail: 'kindFail' }
+
+    /**
+     * 文本是否长到"该折叠"。
+     *
+     * 卡片折叠是为了让**一屏能看几条**：审查理由常见 300~800 字，原始命令
+     * （`arg`）更是多行 PowerShell。否则一屏放不下两条，找记录要滚很久。
+     *
+     * 客户端拿不到真实排版高度（没有测量 ref），所以用保守的字符数+换行数估算：
+     * 估算偏大时多出一个"展开"按钮，偏小则漏折叠——两者都比"测高度"便宜，
+     * 且不会因为面板宽度变化而产生布局抖动。
+     */
+    function isLongText(text, maxChars, maxLines) {
+      if (typeof text !== 'string' || text === '') return false
+      if (text.length > maxChars) return true
+      return text.split('\n').length > maxLines
+    }
+
+    /**
+     * 一条拒绝记录。
+     *
+     * 结构：`[kind 标签] 工具名（省略号）… 时间` / 理由 / 原始命令 / 操作行。
+     * 理由和原始命令默认折叠（理由 4 行、命令 2 行），「展开」按钮在右下角——
+     * 记录多的时候这是能让列表仍然可读的关键（见 styles 里 `.arc-denial` 的注释）。
+     */
+    function DenialCard(props) {
+      const { item, t, disabled, expanded, onToggle, onAppend } = props
+      const reason = typeof item?.reason === 'string' ? item.reason : ''
+      const arg = typeof item?.arg === 'string' ? item.arg : ''
+      const kind = item?.kind ?? 'deny'
+      const clampReason = isLongText(reason, 160, 4)
+      const clampArg = isLongText(arg, 160, 3)
+      const open = expanded === true
+
+      return h(
+        'div',
+        { className: 'arc-denial' },
+        h(
+          'div',
+          { className: 'arc-denial-top' },
+          h(
+            'span',
+            { className: 'arc-denial-kind', 'data-kind': kind },
+            DENIAL_KIND_KEYS[kind] === undefined ? kind : t(DENIAL_KIND_KEYS[kind]),
+          ),
+          h('span', { className: 'arc-denial-tool', title: item?.tool ?? '' }, item?.tool ?? '?'),
+          h('span', { className: 'arc-denial-time' }, formatTime(item?.t)),
+        ),
+        reason === ''
+          ? null
+          : h(
+              'div',
+              { className: 'arc-denial-reason', 'data-clamp': clampReason && !open ? 'on' : 'off' },
+              reason,
+            ),
+        arg === ''
+          ? null
+          : h('div', { className: 'arc-denial-arg', 'data-clamp': clampArg && !open ? 'on' : 'off' }, arg),
+        h(
+          'div',
+          { className: 'arc-denial-foot' },
+          h(
+            'div',
+            { className: 'arc-denial-actions' },
+            h(
+              'button',
+              { type: 'button', className: 'arc-btn arc-btn-sm', disabled, onClick: onAppend },
+              t('appendAsPrompt'),
+            ),
+          ),
+          clampReason || clampArg
+            ? h(
+                'button',
+                { type: 'button', className: 'arc-btn-link', onClick: onToggle },
+                open ? t('collapseDenial') : t('expandDenial'),
+              )
+            : null,
+        ),
+      )
     }
 
     /** 页签标题（chip 上显示的字）。 */

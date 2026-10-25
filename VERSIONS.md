@@ -53,6 +53,7 @@
 | 0.1.1 | `0.2.0-rc.2` | ✅ 已验证 | 修 0.1.0 的设置页「保存失败」：`defaultPreset` 开关把布尔透传给 `'auto' \| 'off'` 联合类型字段（见 §7） |
 | 0.1.1 | `0.2.1-rc.2` | ✅ 已验证 | 下载 0.2.1-rc.2 的六个厂商包（auto-review / permission-presets / api-gateway / settings / client-ui-settings / config-editor）逐条核对 F1–F11 全部成立；同时把版本判定从「精确一条」改成「区间」 |
 | **0.2.0** | `0.2.0-rc.2` | ✅ 已验证 | **新增功能④拒绝记录 + ⑤会话页签 + 会话级提示词**。都建立在**已有**内部事实上（判决形状 F12、右栏扩展点 F13），不需要新宿主能力；F1–F11 全部沿用。`scripts/denial-session-test.mjs` 46 项 + 既有 164 项全通过 |
+| **0.2.1** | `0.2.0-rc.2` | ✅ 已验证 | **只修 UI 排版，不碰宿主契约**：①拒绝记录卡片被 flex 压缩导致长文本叠字（§8）；②`ask` 标签 token 名写错导致白字淡底（§8.2）。F1–F13 全部沿用，`client-structure-test.mjs` 107 项全绿 |
 
 ### 2.0.1 0.2.0 新增依赖的两条内部事实
 
@@ -365,5 +366,52 @@ accepted = (await setField(field, fieldValue(field, next))) === true
 2. 重启 DSH，进设置页点该开关 → 显示「已保存」，且
    `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 的 `auto-review-custom` 条目
    出现 `defaultPreset: auto` / `off`
+
+---
+
+## 8. 已修的排版 bug：拒绝记录卡片被压扁（0.2.1）
+
+> 这一条**不依赖任何宿主内部契约**（不涉及 F1–F13），纯 CSS 布局回归，
+> 记在这里是因为它和 F 表一样属于"看起来像数据坏了、其实是渲染坏了"的类型。
+
+### 8.1 症状
+
+右栏「AutoReview 管理 → 被拒绝的记录」条目一多，卡片里的长理由就溢出自己的
+卡片边框，直接压到下一张卡片的文字上，看起来像"文字重影"。记录少时不出现。
+
+### 8.2 根因（两条，独立）
+
+1. **flex 压缩**：`.arc-tab` 是 `height:100% + overflow-y:auto` 的 flex 列。
+   CSS 里 flex 子项的默认值是 `flex-shrink:1`，于是内容总高度超过可视高度时，
+   浏览器**先把每个子项压扁**（而不是让容器滚动）——卡片高度 < 内容高度，
+   卡片又没有 `overflow:hidden`，文字就溢出到卡片外面。
+   这是"内容越多越乱"的原因：越挤，压缩越狠，溢出越多。
+2. **token 名写错**：`ask` 标签的底色写的是 `--dsw-alias-state-warning-primary`，
+   宿主真实名字是 `--dsw-alias-state-warn-primary`（见 `dsh-client-ui-theme` 的
+   alias 映射）。写错的变量名不报错，只回落到兜底值 `state-idle-primary`（淡灰），
+   而文字色是 `bg-base`（浅色主题下＝白色）→ **白字淡底，看不见**。
+
+### 8.3 修法（0.2.1）
+
+```css
+/* ① 三层都不许压缩：让"超出"重新表现为滚动，而不是叠字 */
+.arc-tab > * { flex: 0 0 auto; }
+.arc-denial-list { flex: 0 0 auto; }
+.arc-denial { flex: 0 0 auto; min-width: 0; }
+
+/* ② 标签改描边 chip：文字用状态色，不再依赖"实底 + 白字" */
+.arc-denial-kind[data-kind="deny"] { color: var(--dsw-alias-state-error-primary); border-color: currentColor; }
+.arc-denial-kind[data-kind="ask"] { color: var(--dsw-alias-state-warn-label, var(--dsw-alias-state-warn-primary)); }
+```
+
+顺带治了"记录太多"本身：理由折叠 4 行、原始命令折叠 2 行（末行 alpha 淡出 +
+「展开 / 收起」），头部一行三段（标签 / 工具名省略号 / 时间右对齐）。
+
+### 8.4 复验方法
+
+1. `node scripts/client-structure-test.mjs` → 107 项全绿；「拒绝记录排版（0.2.1）」
+   分组会断言三层 `flex: 0 0 auto`、折叠上限、淡出与 token 名，删任一条就变红。
+2. 视觉复验（不需要起 DSH）：把改动前后的 css 分别套在同一段 DOM 上，
+   塞进定高容器用 Edge headless 截图对照——记录 ≥3 条时，旧 css 必现叠字。
 
 

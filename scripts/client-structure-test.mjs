@@ -200,6 +200,35 @@ check('页签内也做 auto 门禁', src.includes('autoEnabled'))
 check('非 auto 有解释文案', src.includes("t('autoOnlyHint')"))
 check('autoOnlyHint 中英齐全', src.includes('没有使用 Auto review 预设') && src.includes('not using the Auto review preset'))
 
+heading('拒绝记录排版（0.2.1）')
+// 背景（2026-10-25 用户截图）：记录一多，条目长文本就溢出自己的卡片、叠到
+// 下一张卡片上，看起来像"文字重影"。根因是 `.arc-tab` 是**定高 + overflow:auto**
+// 的 flex 列，子项默认 flex-shrink:1 —— 内容超高时浏览器先压扁卡片而不会滚动，
+// 卡片高度小于内容高度，文字就溢出到卡片外。修法是三层都显式禁止压缩。
+{
+  check('tab 子项禁止压缩', /\.arc-tab > \* \{ flex: 0 0 auto; \}/.test(src))
+  const cardRule = /\.arc-denial \{[^}]*\}/.exec(src)?.[0] ?? ''
+  check('卡片禁止压缩', cardRule.includes('flex: 0 0 auto'), cardRule.slice(0, 90))
+  check('列表禁止压缩', /\.arc-denial-list \{[^}]*flex: 0 0 auto/.test(src))
+
+  // 长文本折叠：理由 4 行、原始命令 2 行，超出给「展开」。否则一屏放不下两条。
+  check('理由折叠有上限', /\.arc-denial-reason\[data-clamp="on"\] \{[^}]*max-height: 68px/.test(src))
+  check('命令折叠有上限', /\.arc-denial-arg\[data-clamp="on"\] \{[^}]*max-height: 32px/.test(src))
+  check('折叠有淡出提示', src.includes('mask-image: linear-gradient'))
+  check('卡片拆成独立组件', src.includes('function DenialCard(') && src.includes('h(DenialCard, {'))
+  check('只有长文本才给展开按钮', src.includes('clampReason || clampArg'))
+  check('展开状态是页签级 Set', src.includes('expandedDenials, setExpandedDenials') && src.includes('new Set(previous)'))
+  check('折叠/展开文案中英齐全', src.includes("expandDenial: '展开'") && src.includes("collapseDenial: 'Collapse'"))
+
+  // 0.2.0 的 ask 标签用了不存在的 token 名（宿主真名是 state-warn-primary），
+  // 写错后回落成淡色底 + bg-base 文字色 → 浅色主题下白字淡底、看不见。
+  check('kind 用本地化文案', src.includes('DENIAL_KIND_KEYS'))
+  check('没有用错的 token 名', !/var\(--dsw-alias-state-warning-primary/.test(src))
+  check('ask 用宿主真实 token', src.includes('var(--dsw-alias-state-warn-label'))
+  check('工具名省略号截断', /\.arc-denial-tool \{[^}]*text-overflow: ellipsis/.test(src))
+  check('时间单独一格', src.includes("className: 'arc-denial-time'"))
+}
+
 console.log(`\n${'='.repeat(48)}`)
 console.log(`通过 ${pass} 项，失败 ${fail} 项`)
 console.log('='.repeat(48))
